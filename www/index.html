@@ -217,7 +217,7 @@ body.paused .eqi i{animation-play-state:paused}
   margin:0 12px;border-radius:26px;border:1px solid var(--edge);background:var(--pane);
   transition:transform .18s cubic-bezier(.2,.8,.2,1);touch-action:pan-y}
 #bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-  filter:grayscale(1) contrast(1.6) brightness(.3);opacity:0;transition:opacity .6s;
+  filter:grayscale(1) contrast(1.6) brightness(calc(.28 + var(--bass,0) * .08 + var(--beat,0) * .05));opacity:0;transition:opacity .6s;
   transform:scale(calc(1.03 + var(--bass,0) * .05))}
 #bg.on{opacity:.55}
 .stage::before{content:"";position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 10%,transparent 25%,var(--pane) 96%);z-index:1}
@@ -358,6 +358,11 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 .eqc.grab .tr{border-color:var(--acc)}
 /* нулевая отметка видна всегда — иначе непонятно, куда возвращать */
 .eqc .tr .mid{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--faint);opacity:.5}
+.eq-response{height:92px;margin:6px 10px 0;border:1px solid var(--edge);border-radius:var(--r);
+  background:var(--card);position:relative;overflow:hidden}
+.eq-response canvas{position:absolute;inset:0;width:100%;height:100%}
+.eq-response .eq-headroom{position:absolute;right:9px;bottom:7px;font-family:var(--mono);font-size:8px;
+  color:var(--dim);letter-spacing:.06em;background:color-mix(in srgb,var(--card) 82%,transparent);padding:3px 6px;border-radius:var(--rp)}
 
 /* стрит-кред */
 .cred{padding:14px 12px}
@@ -518,8 +523,15 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
         <div class="sw" id="eqSw"><i></i></div>
       </div>
 
+      <div class="slot">
+        <div style="flex:1"><div class="sl">AI Auto-EQ</div>
+        <div class="sd" id="autoEqInfo">Подбирает мягкую кривую по локальному анализу жанра, голоса и энергии.</div></div>
+        <div class="sw" id="autoEqSw"><i></i></div>
+      </div>
+
+      <div class="eq-response"><canvas id="eqCurve"></canvas><span class="eq-headroom" id="eqHeadroom">ЗАПАС 0.0 дБ</span></div>
       <div class="eqb" id="eqBands"></div>
-      <div class="sect"><span>ПРЕСЕТЫ ИМПЛАНТОВ</span><span id="eqPreset">FLAT</span></div>
+      <div class="sect"><span>ПРЕСЕТЫ</span><span id="eqPreset">FLAT</span></div>
       <div class="chip-grid" id="eqPresets"></div>
 
       <div class="sect"><span>ОБРАБОТКА</span></div>
@@ -564,8 +576,8 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 
       <div class="sect"><span>ДОСТУПЫ И ТРАКТ</span><span id="permSub">ПРОВЕРКА...</span></div>
       <div class="slot">
-        <div style="flex:1"><div class="sl">Искать обложки в сети</div>
-        <div class="sd">Наружу уйдут только артист и альбом. Файлы — никогда.</div></div>
+        <div style="flex:1"><div class="sl">Обложки для альбомов</div>
+        <div class="sd" id="netInfo">Выключено. Ничего не отправляется.</div></div>
         <div class="sw" id="netSw"><i></i></div>
       </div>
       <div id="permBody"></div>
@@ -793,7 +805,7 @@ const S = {
   openAlbum: null,
   cred: {xp:0, ms:0},
   corp: 'samurai',
-  eq: {on:false, gains:new Array(10).fill(0), preset:'FLAT'},
+  eq: {on:false, auto:false, gains:new Array(10).fill(0), preset:'FLAT'},
   fx: {cmp:false, wide:false, xf:0},
   viz: 0,
   ab: null,           // [a,b]
@@ -805,14 +817,13 @@ const S = {
 
 const BANDS = [32,64,125,250,500,1000,2000,4000,8000,16000];
 const PRESETS = {
-  'FLAT':      {g:[0,0,0,0,0,0,0,0,0,0], d:'Чистый сигнал. Ничего лишнего.'},
-  'SAMURAI':   {g:[5,4,2,-1,-2,0,2,4,5,4], d:'Гитары вперёд. Ложится на рок.'},
-  'ARASAKA':   {g:[7,6,3,0,-2,-1,0,1,2,1], d:'Тяжёлый низ. Корпоративное давление.'},
-  'KANG TAO':  {g:[-2,-1,0,2,4,4,2,0,-1,-2], d:'Вокал в фокусе. Речь читается.'},
-  'NETWATCH':  {g:[-3,-2,-1,0,1,2,3,4,5,5], d:'Холодная детализация. Верх и воздух.'},
-  'BRAINDANCE':{g:[6,4,0,-2,0,2,3,5,6,6], d:'Улыбка. Максимум сцены.'},
-  'PACIFICA':  {g:[8,7,4,1,-1,0,1,2,3,2], d:'Саб-бас для наушников с запасом.'},
-  'НОЧНОЙ':    {g:[2,1,0,1,2,2,1,0,-2,-4], d:'Тихо и тепло. Меньше шипящих.'}
+  'FLAT':       {g:[0,0,0,0,0,0,0,0,0,0], d:'Без окраски.'},
+  'БАС':        {g:[3.5,3,2,0,-1,-1,0,1,1.5,1], d:'Плотнее низ, без гудения.'},
+  'РОК':        {g:[2.5,2,0.5,-1,-0.5,0.5,2,2.5,1.5,0.5], d:'Удар, гитары и атака.'},
+  'ВОКАЛ':      {g:[-2,-1.5,-0.5,1.5,2.5,3,2,0.5,-1,-1.5], d:'Голос ближе и разборчивее.'},
+  'ЭЛЕКТРО':    {g:[3,2.5,0.5,-1,-0.5,0.5,1.5,2.5,3,2], d:'Низ и воздух для электроники.'},
+  'АКУСТИКА':   {g:[-1,0,0.5,1,1.5,1.5,2,1.5,0.5,0], d:'Натуральная середина и детали.'},
+  'НОЧЬ':       {g:[1.5,1,0.5,0,0,0,-0.5,-1.5,-3,-4], d:'Меньше резкого верха на тихой громкости.'}
 };
 const SORTS = {
   added:  {n:'ПО ДОБАВЛЕНИЮ', f:(a,b) => b.added - a.added},
@@ -854,9 +865,9 @@ const CORPS = {
 };
 
 /* ─── АУДИОГРАФ ───────────────────────────────────────── */
-const A = { ctx:null, decks:[], active:0, eq:[], cmp:null, cmpIn:null, cmpOut:null,
+const A = { ctx:null, decks:[], active:0, preamp:null, eq:[], cmp:null, cmpIn:null, cmpOut:null,
             wideIn:null, wideOut:null, splitter:null, merger:null, delay:null,
-            master:null, an:null, data:null, wave:null, wired:false, error:null };
+            limiter:null, master:null, an:null, data:null, wave:null, wired:false, error:null };
 
 function audioFault(e){
   A.error = e || new Error('audio graph');
@@ -879,8 +890,9 @@ function wire(){
       A.decks[i] = {el, src, gain};
     });
     // цепочка эквалайзера
-    let node = C.createGain(); const head = node;
-    A.decks.forEach(d => d.gain.connect(head));
+    A.preamp = C.createGain();
+    let node = A.preamp;
+    A.decks.forEach(d => d.gain.connect(A.preamp));
     BANDS.forEach((f,i) => {
       const b = C.createBiquadFilter();
       b.type = i === 0 ? 'lowshelf' : i === BANDS.length-1 ? 'highshelf' : 'peaking';
@@ -901,12 +913,19 @@ function wire(){
     A.splitter.connect(A.delay, 1, 0);           // выход 1 = ПРАВЫЙ (был 0 → микс схлопывался в моно)
     A.delay.connect(A.merger, 0, 1);             // задержанный R → правый
     A.cmpOut.connect(A.wideIn); A.wideIn.connect(A.wideOut); A.merger.connect(A.wideOut);
+    // Страховочный лимитер всегда после пользовательской обработки. Пресеты
+    // сохраняют динамику предусилением, а лимитер ловит только редкие пики.
+    A.limiter = C.createDynamicsCompressor();
+    A.limiter.threshold.value = -1.2; A.limiter.knee.value = 0; A.limiter.ratio.value = 20;
+    A.limiter.attack.value = .002; A.limiter.release.value = .12;
+    A.wideOut.connect(A.limiter);
     // мастер + анализатор
     A.master = C.createGain(); A.master.gain.value = S.vol;
-    A.an = C.createAnalyser(); A.an.fftSize = 1024; A.an.smoothingTimeConstant = .8;
+    A.an = C.createAnalyser(); A.an.fftSize = 2048; A.an.smoothingTimeConstant = .55;
+    A.an.minDecibels = -90; A.an.maxDecibels = -10;
     // Анализатор ДО громкости: он должен показывать сигнал, а не уровень выхода.
     // Был после мастера — на тихой громкости матрица гасла, на нуле умирала совсем.
-    A.wideOut.connect(A.an); A.an.connect(A.master); A.master.connect(C.destination);
+    A.limiter.connect(A.an); A.an.connect(A.master); A.master.connect(C.destination);
     A.data = new Uint8Array(A.an.frequencyBinCount);
     A.wave = new Uint8Array(A.an.fftSize);
     applyEQ(); applyFX();
@@ -917,8 +936,22 @@ const other = () => A.active === 0 ? 1 : 0;
 function resume(){ if(A.ctx && A.ctx.state === 'suspended') A.ctx.resume(); }
 
 function applyEQ(){
-  if(!A.eq.length) return;
-  A.eq.forEach((b,i) => b.gain.value = S.eq.on ? S.eq.gains[i] : 0);
+  const gains = S.eq.on ? S.eq.gains : new Array(BANDS.length).fill(0);
+  const peak = Math.max(0, ...gains);
+  // Соседние полосы перекрываются, поэтому оставляем ещё 1.5 дБ поверх
+  // максимального подъёма. Это не даёт пресету становиться просто «громче».
+  const headroom = S.eq.on ? Math.min(15, peak + (peak ? 1.5 : 0)) : 0;
+  const label = $('#eqHeadroom');
+  if(label) label.textContent = headroom ? `ЗАПАС −${headroom.toFixed(1)} дБ` : 'ЗАПАС 0.0 дБ';
+  drawEQCurve();
+  if(!A.eq.length || !A.ctx) return;
+  const now = A.ctx.currentTime;
+  A.preamp.gain.cancelScheduledValues(now);
+  A.preamp.gain.setTargetAtTime(Math.pow(10, -headroom/20), now, .025);
+  A.eq.forEach((b,i) => {
+    b.gain.cancelScheduledValues(now);
+    b.gain.setTargetAtTime(gains[i] || 0, now, .025);
+  });
 }
 function applyFX(){
   if(!A.ctx) return;
@@ -967,11 +1000,6 @@ const codecOK = name => {
   if(!m) return true;                      // незнакомое — пусть решает браузер
   return _probe.canPlayType(m) !== '';
 };
-function codecReport(){
-  return Object.keys(MIMES).filter((e,i,a) => a.indexOf(e) === i)
-    .map(e => ({e, ok: _probe.canPlayType(MIMES[e]) !== ''}));
-}
-
 async function imports(files){
   const total = files.length;
   const audio = files.filter(f => f.type.startsWith('audio/') || AUDIO_RE.test(f.name));
@@ -998,6 +1026,7 @@ async function imports(files){
   render(); stats();
   if(S.qpos < 0 && fresh.length) { S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false); }
   permUI();
+  if(S.net && fresh.length) hunt();
   scanReport({total, audio:audio.length, added:fresh.length, dupes, bad, folders:folders.size});
 }
 
@@ -1115,6 +1144,7 @@ const reg = n => {
 };
 const Scanner = reg('MusicScanner');
 const Analyzer = reg('AudioAnalyzer');
+const AppNative = reg('App');
 // Если бридж не поднялся внутри APK — это поломка сборки, а не «просто веб». Кричим.
 if(CAP && !BRIDGE){
   setTimeout(() => toast('РАНТАЙМ CAPACITOR НЕ ЗАГРУЖЕН // НАТИВ НЕДОСТУПЕН'), 1500);
@@ -1183,6 +1213,7 @@ async function nativeScan(includeAll = false){
   await Promise.all(writes);
   if(S.qpos < 0 && added){ S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false); }
   render(); stats(); permUI();
+  if(S.net && added) hunt();
   scanReport({total:res.count + (res.skipped||0), audio:res.count, added, dupes, bad:[],
               folders:res.folderCount||0, folderList:res.folders||[], skipped:res.skipped||0, native:true});
 }
@@ -1250,13 +1281,23 @@ function coverGaps(){
   return [...seen.values()];
 }
 
+function updateNetUI(){
+  const el = $('#netInfo'); if(!el) return;
+  $('#netSw').classList.toggle('on', S.net);
+  const gaps = coverGaps().length;
+  if(!S.net) el.textContent = 'Выключено. Ничего не отправляется.';
+  else if(hunting) el.textContent = `Ищу недостающие обложки: ${gaps}. Наружу уходят только артист и альбом.`;
+  else if(gaps) el.textContent = `Разрешено. Без обложки: ${gaps}. Поиск запускается автоматически.`;
+  else el.textContent = 'Все доступные обложки уже проверены.';
+}
+
 async function hunt(){
   if(hunting) return;
   if(!S.net) return toast('СНАЧАЛА РАЗРЕШИ ПОИСК В СЕТИ');
   if(navigator.onLine === false) return toast('НЕТ СЕТИ');
   const gaps = coverGaps();
   if(!gaps.length) return toast('ВСЕ ОБЛОЖКИ НА МЕСТЕ');
-  hunting = true; permUI();
+  hunting = true; updateNetUI();
   let found = 0, i = 0, fails = 0;
   for(const t of gaps){
     if(!hunting || !S.net) break;                // остановили кнопкой или сняли согласие
@@ -1277,7 +1318,7 @@ async function hunt(){
     if(blob){ found++; softRender(); }
   }
   hunting = false;
-  render(); permUI();
+  render(); updateNetUI();
   toast(found ? `НАЙДЕНО ОБЛОЖЕК: ${found}` : 'НИЧЕГО НЕ НАШЛОСЬ');
 }
 
@@ -1367,6 +1408,7 @@ function load(pos, autoplay = true, viaFade = false){
     if(autoplay) play();
   }
   S.ab = null; $('#abBtn').classList.remove('on'); $('#abBtn').textContent = 'A–B';
+  if(S.eq.auto) applyAutoEQ(t, S.view === 'chip');
   paint(t); render(); session(t); glitch();
   saveKV();
 }
@@ -2167,6 +2209,7 @@ async function analyzeTrack(t, announce = false){
     t.ai = normalizeAI(raw);
     const stored = await save(t);
     if(stored === false) throw new Error('результат не сохранился');
+    if(cur() === t && S.eq.auto){ applyAutoEQ(t, S.view === 'chip'); saveKV(); }
     if(cur() === t) paint(t);
     if(announce) toast(t.ai.genre ? `AI: ${t.ai.genre} // ${Math.round(t.ai.confidence*100)}%` : 'AI: ЖАНР НЕ ОПРЕДЕЛЁН');
     aiUI();
@@ -2302,10 +2345,108 @@ async function runAI(){
 $('#aiRun').onclick = runAI;
 
 /* ─── ЭКВАЛАЙЗЕР-ИМПЛАНТ ──────────────────────────────── */
+function drawEQCurve(){
+  const canvas = $('#eqCurve');
+  if(!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if(rect.width < 2 || rect.height < 2) return;
+  const d = Math.min(devicePixelRatio || 1, 2);
+  const W = Math.round(rect.width*d), H = Math.round(rect.height*d);
+  if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
+  const c = canvas.getContext('2d');
+  const acc = css('--acc'), acc2 = css('--acc2'), edge = css('--edge'), dim = css('--dim');
+  c.clearRect(0,0,W,H);
+  c.lineWidth = d;
+  c.strokeStyle = edge; c.globalAlpha = .8;
+  [-12,-6,0,6,12].forEach(db => {
+    const y = H/2 - db/24*H*.78;
+    c.beginPath(); c.moveTo(0,y); c.lineTo(W,y); c.stroke();
+  });
+  const gains = S.eq.on ? S.eq.gains : new Array(BANDS.length).fill(0);
+  const logs = BANDS.map(Math.log), lo = Math.log(20), hi = Math.log(20000);
+  const gainAt = f => {
+    const x = Math.log(f);
+    if(x <= logs[0]) return gains[0] || 0;
+    if(x >= logs[logs.length-1]) return gains[gains.length-1] || 0;
+    let i = 0; while(i < logs.length-2 && x > logs[i+1]) i++;
+    let p = (x-logs[i])/(logs[i+1]-logs[i]);
+    p = p*p*(3-2*p);
+    return (gains[i] || 0)*(1-p) + (gains[i+1] || 0)*p;
+  };
+  const points = [];
+  for(let x = 0; x <= W; x += Math.max(1,d)){
+    const f = Math.exp(lo + (x/W)*(hi-lo));
+    points.push([x, H/2 - gainAt(f)/24*H*.78]);
+  }
+  const grad = c.createLinearGradient(0,0,W,0); grad.addColorStop(0,acc2); grad.addColorStop(.55,acc); grad.addColorStop(1,acc2);
+  c.globalAlpha = S.eq.on ? .18 : .06; c.fillStyle = grad;
+  c.beginPath(); c.moveTo(0,H/2); points.forEach(p => c.lineTo(p[0],p[1])); c.lineTo(W,H/2); c.closePath(); c.fill();
+  c.globalAlpha = S.eq.on ? 1 : .35; c.strokeStyle = grad; c.lineWidth = Math.max(2,2*d);
+  c.beginPath(); points.forEach((p,i) => i ? c.lineTo(p[0],p[1]) : c.moveTo(p[0],p[1])); c.stroke();
+  c.globalAlpha = .75; c.fillStyle = dim; c.font = `${8*d}px monospace`; c.textBaseline = 'top';
+  [[60,'60'],[250,'250'],[1000,'1k'],[4000,'4k'],[16000,'16k']].forEach(([f,label]) => {
+    const x = (Math.log(f)-lo)/(hi-lo)*W;
+    c.fillText(label, Math.min(W-18*d, Math.max(2*d,x-7*d)), 4*d);
+  });
+  c.globalAlpha = 1;
+}
+addEventListener('resize', drawEQCurve);
+
+function blendEQ(a, b, amount){
+  return a.map((v,i) => v*(1-amount) + b[i]*amount);
+}
+function autoEQCurve(t){
+  if(!t || !t.ai || t.ai.version !== AI_VERSION) return null;
+  const ai = t.ai, genre = String(ai.genre || '').toUpperCase();
+  let preset = 'FLAT';
+  if(/РОК|МЕТАЛ|ПАНК|ГРАНЖ/.test(genre)) preset = 'РОК';
+  else if(/ЭЛЕКТРО|EDM|ХАУС|ТЕХНО|ДАБСТЕП|DRUM|ТРАНС|ДИСКО|ТАНЦ/.test(genre)) preset = 'ЭЛЕКТРО';
+  else if(/ХИП|R&B|СОУЛ|ФАНК|РЕГГИ|АФРО/.test(genre)) preset = 'БАС';
+  else if(/КЛАСС|ОПЕРА|ДЖАЗ|СВИНГ|ФОЛК|БЛЮЗ|КАНТРИ|ФЛАМЕНКО|САУНДТРЕК/.test(genre)) preset = 'АКУСТИКА';
+  else if(/ЭМБИЕНТ|НЬЮ-ЭЙДЖ/.test(genre)) preset = 'НОЧЬ';
+
+  const certainty = Math.max(.35, Math.min(.82, .35 + ai01(ai.confidence)*1.4));
+  let curve = blendEQ(PRESETS.FLAT.g, PRESETS[preset].g, certainty);
+  if(ai01(ai.voice) > .18) curve = blendEQ(curve, PRESETS['ВОКАЛ'].g, Math.min(.38, ai01(ai.voice)*.42));
+  if(ai01(ai.dance) > .18) curve = blendEQ(curve, PRESETS['ЭЛЕКТРО'].g, Math.min(.28, ai01(ai.dance)*.3));
+  if((ai.moods || []).some(x => x.name === 'СОН' || x.name === 'СПОКОЙСТВИЕ'))
+    curve = blendEQ(curve, PRESETS['НОЧЬ'].g, .22);
+  // Громкие энергичные мастера уже плотно сведены: не раздуваем их ещё сильнее.
+  const calm = Math.max(0, (ai01(ai.energy)-.65)/.35);
+  curve = curve.map(v => Math.max(-4, Math.min(4, (v > 0 ? v*(1-calm*.16) : v))));
+  return {g:curve.map(v => Math.round(v*2)/2), name:`AI · ${genre || 'БАЛАНС'}`};
+}
+function updateAutoEQInfo(t = cur()){
+  const el = $('#autoEqInfo'); if(!el) return;
+  if(!S.eq.auto) el.textContent = 'Подбирает мягкую кривую по локальному анализу жанра, голоса и энергии.';
+  else if(!t) el.textContent = 'Включено. Ждёт первый трек.';
+  else if(!t.ai || t.ai.version !== AI_VERSION) el.textContent = 'Для этого трека ещё нет AI-анализа — временно используется FLAT.';
+  else el.textContent = `${t.ai.genre || 'Баланс'} · голос ${Math.round(ai01(t.ai.voice)*100)}% · энергия ${Math.round(ai01(t.ai.energy)*100)}%`;
+}
+function applyAutoEQ(t, rebuild = false){
+  if(!S.eq.auto) return false;
+  const result = autoEQCurve(t);
+  S.eq.on = true;
+  S.eq.gains = result ? result.g : PRESETS.FLAT.g.slice();
+  S.eq.preset = result ? result.name : 'AI · FLAT';
+  applyEQ();
+  updateAutoEQInfo(t);
+  if(rebuild) eqUI();
+  return !!result;
+}
+function manualEQ(){
+  S.eq.auto = false;
+  S.eq.preset = 'РУЧНОЙ';
+  $('#autoEqSw').classList.remove('on');
+  updateAutoEQInfo();
+}
+
 function eqUI(){
   $('#eqSw').classList.toggle('on', S.eq.on);
+  $('#autoEqSw').classList.toggle('on', S.eq.auto);
   $('#eqState').textContent = S.eq.on ? 'АКТИВЕН // ' + S.eq.preset : 'ОТКЛЮЧЁН';
   $('#eqPreset').textContent = S.eq.preset;
+  updateAutoEQInfo();
   $('#eqBands').innerHTML = BANDS.map((f,i) => `
     <div class="eqc" data-i="${i}">
       <div class="tr"><i class="mid"></i><i class="g"></i></div>
@@ -2332,7 +2473,7 @@ function eqUI(){
       g = Math.max(-12, Math.min(12, Math.round(g * 2) / 2));
       if(g === S.eq.gains[i]) return;
       S.eq.gains[i] = g;
-      S.eq.preset = 'РУЧНОЙ'; $('#eqPreset').textContent = 'РУЧНОЙ';
+      manualEQ(); $('#eqPreset').textContent = 'РУЧНОЙ';
       if(!S.eq.on){ S.eq.on = true; $('#eqSw').classList.add('on'); }
       applyEQ(); draw(); $$('#eqPresets .imp').forEach(x => x.classList.remove('on'));
       show();
@@ -2359,8 +2500,8 @@ function eqUI(){
       const t = Date.now();
       if(Math.abs(e.clientY - y0) < 6){          // это тап, а не перетаскивание
         if(t - tap < 320){                       // двойной тап — сброс полосы в ноль
-          S.eq.gains[i] = 0; applyEQ(); draw();
-          S.eq.preset = 'РУЧНОЙ'; $('#eqPreset').textContent = 'РУЧНОЙ';
+          S.eq.gains[i] = 0; manualEQ(); applyEQ(); draw();
+          $('#eqPreset').textContent = 'РУЧНОЙ';
           toast(`${BANDS[i] >= 1000 ? BANDS[i]/1000 + ' кГц' : BANDS[i] + ' Гц'} · СБРОШЕНА`);
         }
         tap = t;
@@ -2376,18 +2517,34 @@ function eqUI(){
       <div class="in">${n}</div><div class="ic">${p.d}</div></div>`).join('');
   $('#eqPresets').querySelectorAll('.imp').forEach(el => el.onclick = () => {
     const n = el.dataset.n;
-    S.eq.gains = PRESETS[n].g.slice(); S.eq.preset = n; S.eq.on = true;
+    S.eq.auto = false; S.eq.gains = PRESETS[n].g.slice(); S.eq.preset = n; S.eq.on = true;
     applyEQ(); eqUI(); saveKV(); toast('ИМПЛАНТ УСТАНОВЛЕН: ' + n);
   });
+  const peak = S.eq.on ? Math.max(0, ...S.eq.gains) : 0;
+  const headroom = peak ? Math.min(15, peak + 1.5) : 0;
+  $('#eqHeadroom').textContent = headroom ? `ЗАПАС −${headroom.toFixed(1)} дБ` : 'ЗАПАС 0.0 дБ';
+  drawEQCurve();
 }
 $('#netSw').onclick = () => {
   S.net = !S.net;
-  $('#netSw').classList.toggle('on', S.net);
   if(!S.net) hunting = false;
-  saveKV(); permUI();
-  toast(S.net ? 'ПОИСК ОБЛОЖЕК РАЗРЕШЁН' : 'ПОИСК ОБЛОЖЕК ВЫКЛЮЧЕН');
+  updateNetUI(); saveKV();
+  if(S.net){ toast('ПОИСК ОБЛОЖЕК РАЗРЕШЁН'); if(coverGaps().length) hunt(); }
+  else toast('ПОИСК ОБЛОЖЕК ВЫКЛЮЧЕН');
 };
-$('#eqSw').onclick = () => { S.eq.on = !S.eq.on; applyEQ(); eqUI(); saveKV(); };
+$('#autoEqSw').onclick = () => {
+  S.eq.auto = !S.eq.auto;
+  if(S.eq.auto){
+    applyAutoEQ(cur());
+    toast(cur() && cur().ai ? 'AI AUTO-EQ НАСТРОЕН ПОД ТРЕК' : 'AI AUTO-EQ ЖДЁТ АНАЛИЗ ТРЕКА');
+  }else toast('AI AUTO-EQ ВЫКЛЮЧЕН // КРИВАЯ ОСТАЛАСЬ РУЧНОЙ');
+  eqUI(); saveKV();
+};
+$('#eqSw').onclick = () => {
+  S.eq.on = !S.eq.on;
+  if(!S.eq.on) S.eq.auto = false;
+  applyEQ(); eqUI(); saveKV();
+};
 $('#cmpSw').onclick = e => { S.fx.cmp = !S.fx.cmp; e.currentTarget.classList.toggle('on', S.fx.cmp); applyFX(); saveKV(); };
 $('#widSw').onclick = e => { S.fx.wide = !S.fx.wide; e.currentTarget.classList.toggle('on', S.fx.wide); applyFX(); saveKV(); };
 $('#xf').oninput = e => { S.fx.xf = +e.target.value; $('#xfV').textContent = S.fx.xf + ' с'; saveKV(); };
@@ -2407,100 +2564,63 @@ function topUI(){
   });
 }
 
-/* ─── ДОСТУПЫ: только то, что реально существует в вебе ─── */
-/* Пик анализатора — чтобы не гадать, доходит ли звук до графа */
-function anLevel(){
-  if(!A.an || !A.data) return '—';
-  A.an.getByteFrequencyData(A.data);
-  let m = 0; for(let i = 0; i < A.data.length; i++) m = Math.max(m, A.data[i]);
-  return m + '/255';
-}
-
+/* ─── ДОСТУПЫ: коротко и только живые факты ────────────── */
 async function permUI(){
-  const q = navigator.storage?.estimate ? await navigator.storage.estimate().catch(() => null) : null;
   let persisted = null;
-  if(navigator.storage?.persisted){ try{ persisted = await navigator.storage.persisted(); }catch(e){ console.warn('storage persisted:', e); } }
-  const canPersist = !!navigator.storage?.persist;
-  const codecs = codecReport();
-  const okC = codecs.filter(c => c.ok).map(c => c.e.toUpperCase());
-  const noC = codecs.filter(c => !c.ok).map(c => c.e.toUpperCase());
-
-  /* Правило экрана: строка либо что-то делает, либо сообщает факт.
-     Строк «НЕТ API, ничего не поделаешь» больше нет — они здесь не нужны.
-     Поэтому список для APK и для браузера разный: это разные миры. */
+  const canPersist = !!(navigator.storage && navigator.storage.persist && navigator.storage.persisted);
+  if(canPersist){
+    try{ persisted = await navigator.storage.persisted(); }
+    catch(e){ console.warn('storage persisted:', e); }
+  }
   const rows = [];
 
   if(NATIVE){
-    let a = null, n = null, scanError = null, notifyError = null;
+    let access = null, notify = null, scanError = null, notifyError = null;
     if(Scanner){
-      try{ a = await Scanner.checkAccess(); }catch(e){ scanError = e; }
-      try{ n = await Scanner.notifyAccess(); }catch(e){ notifyError = e; }
+      try{ access = await Scanner.checkAccess(); }catch(e){ scanError = e; console.error('MusicScanner access:', e); }
+      try{ notify = await Scanner.notifyAccess(); }catch(e){ notifyError = e; console.error('MusicScanner notify:', e); }
     }
+    const scanReady = !!(Scanner && access && !scanError);
+    rows.push({t:'Музыка телефона',
+      st:!scanReady ? ['no','ОШИБКА'] : access.granted === true ? ['ok','ДОСТУП ЕСТЬ'] : ['mid','НУЖНО РАЗРЕШЕНИЕ'],
+      d:!scanReady ? 'Сканер не отвечает — общая библиотека телефона сейчас недоступна.'
+        : access.granted === true ? 'Сканирование читает индекс Android; сами аудиофайлы не копируются.'
+        : 'Нажми «СКАНИРОВАТЬ ТЕЛЕФОН» — Android покажет запрос доступа.'});
 
-    rows.push({ t:'Вся музыка телефона',
-      st: !Scanner || scanError ? ['no','ПЛАГИН НЕ ОТВЕЧАЕТ'] : a.granted ? ['ok','ДОСТУП ЕСТЬ'] : ['mid','НЕ ЗАПРОШЕН'],
-      d: !Scanner || scanError ? 'MusicScanner не ответил. Сканирование MediaStore в этой сборке недоступно.' : a.granted
-        ? 'Кнопка «СКАНИРОВАТЬ ТЕЛЕФОН» внизу заберёт всё. Папки выбирать не нужно: Android уже обошёл телефон и карту памяти, дека читает его готовый индекс целиком. Файлы не копируются. Слепое пятно одно: папки с .nomedia система не индексирует вообще.'
-        : 'Жми «СКАНИРОВАТЬ ТЕЛЕФОН» внизу — Android спросит разрешение, и дека заберёт всю музыку разом, из любых папок.',
-      ask: null });
-
-    const mediaBroken = !MS || !Scanner || !n || msHealth === 'error' || notifyError;
-    rows.push({ t:'Шторка и экран блокировки',
-      st: mediaBroken ? ['no','ПЛАГИН НЕ ОТВЕЧАЕТ'] : !n.granted ? ['mid','НУЖНО РАЗРЕШЕНИЕ']
-        : msHealth === 'ok' ? ['ok','РАБОТАЕТ'] : ['mid','ГОТОВ К ПРОВЕРКЕ'],
-      d: mediaBroken ? 'Media Session или проверка уведомлений не ответили. Шторка в этой сессии не подтверждена.'
-        : !n.granted ? 'Android 13+ без разрешения молча выбрасывает уведомление — шторки не будет.'
-        : msHealth === 'ok' ? 'Нативный вызов прошёл: метаданные и состояние воспроизведения передаются в Media Session.'
-        : 'Плагин зарегистрирован и разрешение есть. Фактический ответ появится после первого запуска трека.',
-      ask: (!mediaBroken && !n.granted) ? 'РАЗРЕШИТЬ' : null,
-      act: async () => { askedNotify = false; await ensureNotify(); permUI(); } });
-
-  }else{
-    rows.push({ t:'Вся музыка телефона', st:['no','НЕ В БРАУЗЕРЕ'],
-      d:'Сплошной доступ к файлам браузеру не дают — такого API нет и запроса не будет. Тут только выбор папки кнопкой ниже. Целиком читает музыку APK-сборка.' });
-
-    if('mediaSession' in navigator)
-      rows.push({ t:'Шторка и экран блокировки', st:['ok','API ЕСТЬ'],
-        d:'Браузер объявил Media Session API. Метаданные и обработчики проверяются при первом запуске трека; отдельное разрешение не требуется.' });
-
-    if('showDirectoryPicker' in window)
-      rows.push({ t:'Проверка выбора папки', st:['ok','API ОБЪЯВЛЕН'],
-        d:'Кнопка проверяет, разрешает ли оболочка открыть системный выбор папки. Дека не сохраняет выданный handle и не обещает доступ без повторного выбора.',
-        ask:'ПРОВЕРИТЬ', act: async () => {
-          try{ await window.showDirectoryPicker(); toast('РАБОТАЕТ // ПАПКА ОТДАНА'); }
-          catch(e){ toast(e?.name === 'AbortError' ? 'ОТМЕНА // НО МЕТОД ЖИВОЙ' : 'ОБЪЯВЛЕН, НО НЕ РАБОТАЕТ'); }
-        } });
+    const mediaReady = !!(MS && notify && !notifyError && msHealth !== 'error');
+    rows.push({t:'Экран блокировки',
+      st:!mediaReady ? ['no','ОШИБКА'] : notify.granted !== true ? ['mid','НУЖНО РАЗРЕШЕНИЕ']
+        : msHealth === 'ok' ? ['ok','РАБОТАЕТ'] : ['mid','ЖДЁТ PLAY'],
+      d:!mediaReady ? 'Кнопки и обложка в шторке сейчас недоступны.'
+        : notify.granted !== true ? 'Разреши уведомления, чтобы появились кнопки плеера.'
+        : msHealth === 'ok' ? 'Android получает текущий трек и состояние воспроизведения.'
+        : 'Проверка завершится после запуска первого трека.',
+      ask:mediaReady && notify.granted !== true ? 'РАЗРЕШИТЬ' : null,
+      act:async () => { askedNotify = false; await ensureNotify(); permUI(); }});
+  }else if(WEBMS){
+    rows.push({t:'Экран блокировки', st:['ok','ПОДДЕРЖИВАЕТСЯ'],
+      d:'Браузер принимает обложку и кнопки после запуска трека.'});
   }
 
-  // Общее для обоих миров
-  if(canPersist)
-    rows.push({ t:'Память деки закреплена', st: persisted === true ? ['ok','ДА'] : persisted === false ? ['mid','НЕТ'] : ['no','НЕ ПРОВЕРЕНО'],
-      d: persisted === true ? 'Система не сотрёт библиотеку при нехватке места.'
-        : persisted === null ? 'Браузер не ответил на проверку закрепления. Кнопка ниже выполнит реальный запрос.'
-        : (NATIVE ? 'Здесь хранятся только метаданные, но и их Android может вытеснить — придётся пересканировать.'
-                  : 'Без него Android может вытеснить память деки и стереть все треки.'),
-      ask: persisted === true ? null : 'ЗАКРЕПИТЬ',
-      act: async () => { toast(await navigator.storage.persist().catch(() => false) ? 'ПАМЯТЬ ЗАКРЕПЛЕНА' : 'ОТКАЗАНО // СИСТЕМА РЕШАЕТ САМА'); permUI(); } });
+  if(canPersist){
+    rows.push({t:'Защита библиотеки',
+      st:persisted === true ? ['ok','ВКЛЮЧЕНА'] : persisted === false ? ['mid','НЕ ВКЛЮЧЕНА'] : ['no','НЕ ПРОВЕРЕНО'],
+      d:persisted === true ? 'Система не должна очищать данные деки при нехватке места.'
+        : 'Можно попросить систему не очищать данные деки автоматически.',
+      ask:persisted === true ? null : 'ЗАЩИТИТЬ',
+      act:async () => {
+        let ok = false;
+        try{ ok = await navigator.storage.persist(); }catch(e){ console.error('storage persist:', e); }
+        toast(ok ? 'ЗАЩИТА БИБЛИОТЕКИ ВКЛЮЧЕНА' : 'СИСТЕМА НЕ ДАЛА ЗАКРЕПИТЬ ПАМЯТЬ');
+        permUI();
+      }});
+  }
 
-  if(q)
-    rows.push({ t:'Занято на диске', st:['ok', Math.round((q.usage/q.quota)*100) + '%'],
-      d: `${mb(q.usage||0)} из ${mb(q.quota||0)}.` + (NATIVE ? ' Только метаданные — сами файлы остаются там, где лежали.' : ' Треки скопированы в память деки целиком.') });
-
-  rows.push({ t:'Звуковой тракт', st: A.error ? ['no','ОШИБКА'] : A.ctx ? (A.ctx.state === 'running' ? ['ok','ЖИВОЙ'] : ['mid', A.ctx.state.toUpperCase()]) : ['mid','НЕ ЗАПУЩЕН'],
-    d: A.error ? 'Аудиограф не собрался: обычное воспроизведение может остаться, но EQ, эффекты и визуализатор недоступны.'
-      : A.ctx ? `${A.ctx.sampleRate} Гц · ${A.eq.length} полос EQ · компрессор ${S.fx.cmp?'вкл':'выкл'} · стерео ${S.fx.wide?'вкл':'выкл'} · сигнал ${anLevel()}`
-             : 'Запустится при первом касании — этого требует Android.' });
-
-  const gaps = coverGaps().length;
-  rows.push({ t:'Обложки из сети', st: !S.net ? ['mid','ВЫКЛЮЧЕНО'] : hunting ? ['ok','ИЩЕТ...'] : gaps ? ['mid', gaps + ' БЕЗ ОБЛОЖКИ'] : ['ok','ВСЁ НА МЕСТЕ'],
-    d: !S.net
-      ? 'Выключено. Дека покажет только те обложки, что вшиты в сами файлы. Включи тумблером ниже — и она сможет искать недостающие в открытой базе MusicBrainz.'
-      : `Ищем в MusicBrainz и Cover Art Archive — открытая база, ключей не просит. Наружу уходят только имя артиста и название альбома, сами файлы никуда не отправляются. Ищем по альбому, не по треку: ${gaps} запросов вместо ${S.lib.filter(t => !t.art && !(t.native && t.artUri)).length}. Лимит базы — 1 запрос в секунду, поэтому не быстро.`,
-    ask: !S.net ? null : hunting ? 'ОСТАНОВИТЬ' : (gaps ? `НАЙТИ (${gaps})` : null),
-    act: () => { if(hunting){ hunting = false; toast('ПОИСК ОСТАНОВЛЕН'); } else hunt(); } });
-
-  rows.push({ t:'Форматы', st:['ok', okC.length + '/' + codecs.length],
-    d:'Играет: ' + okC.join(', ') + (noC.length ? '. Не играет: ' + noC.join(', ') + ' — такие файлы сканер пропустит и скажет об этом.' : '.') });
+  rows.push({t:'Обработка звука',
+    st:A.error ? ['no','ОШИБКА'] : !A.ctx ? ['mid','ЖДЁТ PLAY'] : A.ctx.state === 'running' ? ['ok','РАБОТАЕТ'] : ['mid','ПАУЗА'],
+    d:A.error ? 'EQ, эффекты и визуализатор не запустились.'
+      : !A.ctx ? 'Аудиотракт включится при первом касании Play.'
+      : `EQ ${S.eq.on ? 'включён' : 'выключен'}${S.eq.auto ? ' · AI Auto-EQ активен' : ''}.`});
 
   $('#permBody').innerHTML = rows.map((r,i) => `
     <div class="perm">
@@ -2509,7 +2629,8 @@ async function permUI(){
       ${r.ask ? `<button class="ask" data-i="${i}">${r.ask}</button>` : ''}
     </div>`).join('');
   $('#permBody').querySelectorAll('.ask').forEach(b => b.onclick = () => rows[+b.dataset.i].act());
-  $('#permSub').textContent = NATIVE ? 'НАТИВНАЯ СБОРКА' : 'ВЕБ-ВЕРСИЯ';
+  $('#permSub').textContent = NATIVE ? 'APK' : 'БРАУЗЕР';
+  updateNetUI();
 }
 
 function stats(){
@@ -2547,21 +2668,51 @@ const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const root = document.documentElement;
 const miniRing = $('#miniRing');
-let rot = 0, rotV = 0, bassV = 0;
+let rot = 0, rotV = 0;
+const V = {bands:new Float32Array(96), raw:new Float32Array(96), peak:.18,
+  energy:0, bass:0, prevBass:0, beat:0, spin:0};
+
+function sampleVisual(live){
+  if(!A.an || !A.data) return;
+  A.an.getByteFrequencyData(A.data);
+  const audible = live && S.mode !== 'radio';
+  const bins = A.data.length, nyquist = A.ctx.sampleRate/2;
+  let peak = 0;
+  for(let i = 0; i < V.raw.length; i++){
+    const f1 = 38 * Math.pow(18000/38, i/V.raw.length);
+    const f2 = 38 * Math.pow(18000/38, (i+1)/V.raw.length);
+    const lo = Math.max(1, Math.min(bins-1, Math.floor(f1/nyquist*bins)));
+    const hi = Math.max(lo+1, Math.min(bins, Math.ceil(f2/nyquist*bins)));
+    let sum = 0;
+    for(let b = lo; b < hi; b++){ const n = A.data[b]/255; sum += n*n; }
+    const raw = audible ? Math.sqrt(sum/Math.max(1,hi-lo)) : 0;
+    V.raw[i] = raw; peak = Math.max(peak, raw);
+  }
+  V.peak = peak > V.peak ? V.peak + (peak-V.peak)*.24 : Math.max(.14, V.peak*.993);
+  let energy = 0, bass = 0;
+  for(let i = 0; i < V.bands.length; i++){
+    const norm = Math.pow(Math.max(0, Math.min(1, (V.raw[i]-.025)/Math.max(.08,V.peak-.025))), .72);
+    const speed = norm > V.bands[i] ? .48 : .105;
+    V.bands[i] += (norm-V.bands[i])*speed;
+    energy += V.bands[i];
+    if(i < 25) bass += V.bands[i];
+  }
+  energy /= V.bands.length; bass /= 25;
+  V.energy += (energy-V.energy)*(energy > V.energy ? .24 : .07);
+  V.bass += (bass-V.bass)*(bass > V.bass ? .34 : .09);
+  const hit = V.bass - V.prevBass;
+  if(audible && hit > .075 && V.bass > .28) V.beat = 1;
+  else V.beat *= .86;
+  V.prevBass += (V.bass-V.prevBass)*.2;
+  if(audible && !RM) V.spin = (V.spin + .0012 + V.energy*.004 + V.beat*.006) % (Math.PI*2);
+}
 
 function motion(){
-  if(RM) return;
   const live = !au().paused && !!au().src;
-
-  // низ: берём первые бины и сглаживаем, иначе дёргается
-  if(A.an){
-    A.an.getByteFrequencyData(A.data);
-    let b = 0;
-    for(let i = 1; i < 7; i++) b = Math.max(b, A.data[i]);
-    if(S.mode === 'radio') b = 0;              // на эфире анализатору нечего слушать
-    bassV += ((live ? b/255 : 0) - bassV) * 0.16;
-    root.style.setProperty('--bass', bassV.toFixed(3));
-  }
+  sampleVisual(live);
+  root.style.setProperty('--bass', V.bass.toFixed(3));
+  root.style.setProperty('--beat', V.beat.toFixed(3));
+  if(RM) return;
 
   // пластинка: 0.3°/кадр ≈ оборот за 20 с. Инерция 0.035 — вертушка
   // не встаёт колом на паузе, а выбегает, как настоящая.
@@ -2588,12 +2739,11 @@ function frame(){
   const tNow = performance.now() / 1000;
 
   if(S.viz === 0){
-    A.an.getByteFrequencyData(A.data);
-    const gw = W/COLS, gh = H/ROWS, px = gw*.22, py = gh*.24, bins = A.data.length;
+    const gw = W/COLS, gh = H/ROWS, px = gw*.22, py = gh*.24;
     for(let c = 0; c < COLS; c++){
-      const lo = Math.floor(Math.pow(c/COLS, 1.9) * bins);
-      const hi = Math.max(lo+1, Math.floor(Math.pow((c+1)/COLS, 1.9) * bins));
-      let v = 0; for(let i = lo; i < hi; i++) v = Math.max(v, A.data[i]);
+      const lo = Math.floor(c/COLS * V.bands.length);
+      const hi = Math.max(lo+1, Math.floor((c+1)/COLS * V.bands.length));
+      let v = 0; for(let i = lo; i < hi; i++) v = Math.max(v, V.bands[i]);
       // на паузе сетка не гаснет в ноль, а дышит медленной волной — дека спит, но жива
       const lit = dead
         ? 1 + Math.round((Math.sin(c * .38 - tNow * 1.5) * .5 + .5) * ROWS * .16)
@@ -2615,32 +2765,37 @@ function frame(){
     for(let y = 0; y < H; y += H/8){ cx.beginPath(); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke(); }
     cx.globalAlpha = 1; cx.lineWidth = Math.max(2, W/300); cx.lineCap = 'round'; cx.lineJoin = 'round';
     cx.strokeStyle = acc; cx.shadowBlur = 0;
+    let wavePeak = 0;
+    for(let i = 0; i < A.wave.length; i++) wavePeak = Math.max(wavePeak, Math.abs(A.wave[i]-128)/128);
+    const waveGain = dead ? 0 : Math.min(3.2, .78/Math.max(.08,wavePeak));
     cx.beginPath();
     for(let i = 0; i < A.wave.length; i++){
-      const x = i/A.wave.length * W, y = H/2 + (A.wave[i]-128)/128 * H*.42;
+      const x = i/A.wave.length * W;
+      const sleep = Math.sin(i/A.wave.length*Math.PI*4 + tNow)*H*.012;
+      const y = H/2 + (dead ? sleep : (A.wave[i]-128)/128 * waveGain * H*.42);
       i ? cx.lineTo(x,y) : cx.moveTo(x,y);
     }
     cx.stroke();
   }
   else{
-    A.an.getByteFrequencyData(A.data);
     const cxp = W/2, cyp = H/2, R = Math.min(W,H)*.17;
-    const N = 96, bins = A.data.length;
-    cx.globalAlpha = .18; cx.strokeStyle = acc2; cx.lineWidth = 1;
-    [1,1.6,2.2].forEach(k => { cx.beginPath(); cx.arc(cxp,cyp,R*k,0,7); cx.stroke(); });
+    const N = V.bands.length, pulse = dead ? 0 : V.beat;
+    cx.globalAlpha = .12 + pulse*.18; cx.strokeStyle = acc2; cx.lineWidth = 1 + pulse*2;
+    [1,1.6+pulse*.05,2.2+pulse*.11].forEach(k => { cx.beginPath(); cx.arc(cxp,cyp,R*k,0,7); cx.stroke(); });
     cx.globalAlpha = 1; cx.lineWidth = Math.max(3, W/220); cx.lineCap = 'round';
     for(let i = 0; i < N; i++){
-      const bi = Math.floor(Math.pow(i/N, 1.7) * bins*.7);
-      const v = dead ? .03 + (Math.sin(i * .22 - tNow * 1.3) * .5 + .5) * .07 : A.data[bi]/255;
-      const ang = i/N * Math.PI*2 - Math.PI/2;
-      const r1 = R, r2 = R + v * Math.min(W,H)*.3;
-      cx.strokeStyle = v > .7 ? warn : v > .4 ? acc : acc2;
-      cx.globalAlpha = .35 + v*.65;
+      const v = dead ? .04 + (Math.sin(i * .22 - tNow * 1.3) * .5 + .5) * .08 : V.bands[i];
+      const ang = i/N * Math.PI*2 - Math.PI/2 + V.spin;
+      const r1 = R*(1 + pulse*.035), r2 = r1 + (.05 + v*.95) * Math.min(W,H)*.29;
+      cx.strokeStyle = v > .72 ? warn : v > .38 ? acc : acc2;
+      cx.globalAlpha = .32 + v*.68;
       cx.beginPath();
       cx.moveTo(cxp + Math.cos(ang)*r1, cyp + Math.sin(ang)*r1);
       cx.lineTo(cxp + Math.cos(ang)*r2, cyp + Math.sin(ang)*r2);
       cx.stroke();
     }
+    cx.globalAlpha = .1 + V.energy*.18 + pulse*.12; cx.fillStyle = acc;
+    cx.beginPath(); cx.arc(cxp,cyp,R*(.92+pulse*.045),0,Math.PI*2); cx.fill();
   }
   cx.globalAlpha = 1;
 }
@@ -2946,7 +3101,7 @@ async function restore(){
       playlists: cfg.playlists || [], cred: cfg.cred || {xp:0,ms:0}, corp: cfg.corp || 'samurai',
       viz: cfg.viz || 0, sort: SORTS[cfg.sort] ? cfg.sort : 'added', net: !!cfg.net
     });
-    if(cfg.eq) S.eq = {on:!!cfg.eq.on, gains:(cfg.eq.gains||S.eq.gains).slice(), preset:cfg.eq.preset||'FLAT'};
+    if(cfg.eq) S.eq = {on:!!cfg.eq.on, auto:!!cfg.eq.auto, gains:(cfg.eq.gains||S.eq.gains).slice(0, BANDS.length), preset:cfg.eq.preset||'FLAT'};
     if(cfg.fx) S.fx = {cmp:!!cfg.fx.cmp, wide:!!cfg.fx.wide, xf:cfg.fx.xf||0};
   }
   const rows = await DB.all('tracks');
@@ -2984,7 +3139,7 @@ async function restore(){
       S.qpos = cfg.qpos;
 
       const t = S.byId.get(S.queue[S.qpos]);
-      if(t){ paint(t); session(t); au().src = url(t);
+      if(t){ if(S.eq.auto) applyAutoEQ(t); paint(t); session(t); au().src = url(t);
              $('#tt').textContent = t.dur ? fmt(t.dur) : '0:00'; }
     }
   }
@@ -2992,10 +3147,8 @@ async function restore(){
 }
 
 /* ─── АППАРАТНАЯ «НАЗАД» ──────────────────────────────────
-   Раньше выход из приложения из любой вкладки: у вебвью не было истории,
-   canGoBack() возвращал false, и Android просто закрывал активность.
-   Плагин для этого не нужен — Capacitor сам зовёт webView.goBack(),
-   надо лишь дать ему что откатывать. Заодно работает и в браузере. */
+   В APK событие забирает @capacitor/app. История остаётся только для браузера:
+   WebView не обязан превращать системный Back в popstate. */
 function layers(){
   const L = [];
   if(sheet.classList.contains('on'))            L.push(closeSheet);
@@ -3008,13 +3161,22 @@ function layers(){
   return L;
 }
 let guarded = false, handlingBack = false, releasingBack = false;
+function closeOneLayer(){
+  const L = layers();
+  if(!L.length) return false;
+  handlingBack = true;
+  try{ L[0](); }
+  catch(e){ console.error('back layer:', e); toast('НЕ УДАЛОСЬ ЗАКРЫТЬ ТЕКУЩИЙ ЭКРАН'); }
+  finally{ handlingBack = false; }
+  return true;
+}
 function armBack(){
-  if(guarded || handlingBack || releasingBack || !layers().length) return;
+  if(NATIVE || guarded || handlingBack || releasingBack || !layers().length) return;
   guarded = true;
   history.pushState({n54:1}, '');
 }
 function releaseBack(){
-  if(!guarded || handlingBack || releasingBack) return;
+  if(NATIVE || !guarded || handlingBack || releasingBack) return;
   guarded = false; releasingBack = true;
   history.back();
 }
@@ -3025,13 +3187,30 @@ addEventListener('popstate', () => {
     if(layers().length) armBack();
     return;
   }
-  const L = layers();
-  if(!L.length) return;
-  handlingBack = true;
-  L[0]();
-  handlingBack = false;
+  if(!closeOneLayer()) return;
   if(layers().length) armBack();
 });
+
+async function wireNativeBack(){
+  if(!NATIVE) return;
+  if(!AppNative){
+    console.error('App plugin is missing: hardware Back will use Android default');
+    return toast('КНОПКА НАЗАД НЕ ПОДКЛЮЧЕНА // ПЛАГИН APP ОТСУТСТВУЕТ');
+  }
+  try{
+    await AppNative.addListener('backButton', () => {
+      if(closeOneLayer()) return;
+      AppNative.exitApp().catch(e => {
+        console.error('App.exitApp:', e);
+        toast('ANDROID НЕ ДАЛ ЗАКРЫТЬ ПРИЛОЖЕНИЕ');
+      });
+    });
+  }catch(e){
+    console.error('App backButton:', e);
+    toast('КНОПКА НАЗАД НЕ ПОДКЛЮЧЕНА');
+  }
+}
+wireNativeBack();
 
 /* ─── ГОРЯЧИЕ КЛАВИШИ ─────────────────────────────────── */
 addEventListener('keydown', e => {
