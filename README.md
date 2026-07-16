@@ -71,7 +71,7 @@ npm run serve          # http://localhost:5173
 ### APK
 
 ```bash
-npm install
+npm ci
 npx cap add android                     # папки android/ в репозитории нет
 npx @capacitor/assets generate --android # иконки и сплэш из assets/
 node scripts/patch-android.mjs          # плагин + разрешения
