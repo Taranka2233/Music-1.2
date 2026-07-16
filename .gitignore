@@ -6,3 +6,5 @@ ios/
 .env
 dist/
 www/capacitor.js
+native/ai/yamnet.tflite
+native/ai/*.download

@@ -7,12 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>N54 // AUDIO DECK</title>
 <link rel="manifest" href="manifest.webmanifest">
-<!-- Шрифты не блокируют отрисовку: media="print" снимает их с критического пути,
-     onload возвращает обратно. Офлайн-плеер не имеет права ждать сеть, чтобы
-     показать первый экран. Пока шрифт едет, текст рисуется системным. -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" media="print" onload="this.media='all'"
-      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Chakra+Petch:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Chakra+Petch:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 /* ═══ ТОКЕНЫ ══════════════════════════════════════════ */
 :root{
@@ -219,7 +215,7 @@ body.paused .eqi i{animation-play-state:paused}
 
 .stage{flex:1 1 auto;position:relative;min-height:0;overflow:hidden;
   margin:0 12px;border-radius:26px;border:1px solid var(--edge);background:var(--pane);
-  transition:transform .18s cubic-bezier(.2,.8,.2,1)}
+  transition:transform .18s cubic-bezier(.2,.8,.2,1);touch-action:pan-y}
 #bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
   filter:grayscale(1) contrast(1.6) brightness(.3);opacity:0;transition:opacity .6s;
   transform:scale(calc(1.03 + var(--bass,0) * .05))}
@@ -342,6 +338,10 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 .imp .ic{font-family:var(--mono);font-size:8px;color:var(--dim);margin-top:3px;line-height:1.5}
 .imp .ix{position:absolute;top:6px;right:8px;font-family:var(--mono);font-size:8px;color:var(--faint)}
 .imp.on .ix{color:var(--acc)}
+.ai-meter{height:7px;margin:4px 14px 10px;border:1px solid var(--edge);border-radius:var(--rp);overflow:hidden;background:var(--pane)}
+.ai-meter i{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .2s}
+.ai-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.ai-tag{font-family:var(--mono);font-size:8px;color:var(--acc2);border:1px solid color-mix(in srgb,var(--acc2) 35%,var(--edge));border-radius:99px;padding:3px 6px}
 /* Десять полос в ширину экрана — это 31 px на столбец, пальцем не попасть.
    Поэтому столбцы широкие, а полоса едет вбок. touch-action:pan-x отдаёт
    браузеру горизонтальный жест (прокрутка), а вертикальный оставляет нам. */
@@ -502,6 +502,16 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
         <div class="sub">ЗВУКОВОЙ ПРОЦЕССОР // СЛОТЫ ИМПЛАНТОВ</div>
       </div>
 
+      <div class="sect"><span>NEURAL SORT // ЛОКАЛЬНЫЙ AI</span><span id="aiState">ПРОВЕРКА...</span></div>
+      <div class="slot">
+        <div style="flex:1"><div class="sl">Анализ библиотеки</div>
+        <div class="sd" id="aiInfo">YAMNet определяет жанр, настроение, инструменты и голос. Аудио не покидает телефон.</div></div>
+        <button class="btn" id="aiRun">АНАЛИЗ</button>
+      </div>
+      <div class="ai-meter"><i id="aiFill"></i></div>
+      <div class="sect"><span>УМНЫЕ ПОДБОРКИ</span><span id="aiCount">0 ТРЕКОВ</span></div>
+      <div class="chip-grid" id="aiMixes"></div>
+
       <div class="slot">
         <div><div class="sl">Звуковой процессор</div><div class="sd" id="eqState">ОТКЛЮЧЁН</div></div>
         <span class="sp" style="flex:1"></span>
@@ -553,6 +563,11 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
       <div class="chip-grid" id="sleepOpts"></div>
 
       <div class="sect"><span>ДОСТУПЫ И ТРАКТ</span><span id="permSub">ПРОВЕРКА...</span></div>
+      <div class="slot">
+        <div style="flex:1"><div class="sl">Искать обложки в сети</div>
+        <div class="sd">Наружу уйдут только артист и альбом. Файлы — никогда.</div></div>
+        <div class="sw" id="netSw"><i></i></div>
+      </div>
       <div id="permBody"></div>
 
       <div class="sect"><span>ЧАЩЕ ВСЕГО СЛУШАЕШЬ</span></div>
@@ -663,12 +678,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
      Файл кладёт сборка (шаг «Рантайм Capacitor» в android.yml), в git его нет.
      В браузере он просто не найдётся, и дека честно останется веб-версией. -->
 <script src="capacitor.js"></script>
-<!-- defer, а не блокирующий тег. Обычный <script src> останавливает разбор
-     страницы до конца загрузки: в режиме полёта это была тридцатисекундная
-     пауза на пустом экране перед стартом деки. Теги читаются только при
-     импорте, к тому моменту скрипт либо приехал, либо его нет — tags() это
-     проверяет и молча пропускает. -->
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+<script src="vendor/jsmediatags.js"></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════
@@ -714,38 +724,50 @@ const DB = {
   },
   tx(store, mode){ return this.db.transaction(store, mode).objectStore(store); },
   async put(store, val, key){
-    if(!this.ok) return;
-    try{ await new Promise((res,rej) => { const r = this.tx(store,'readwrite').put(val, key); r.onsuccess = res; r.onerror = () => rej(r.error); }); }catch(e){}
+    if(!this.ok) return true;
+    try{ await new Promise((res,rej) => { const r = this.tx(store,'readwrite').put(val, key); r.onsuccess = res; r.onerror = () => rej(r.error); }); return true; }
+    catch(e){ storageFault(e); return false; }
   },
   async del(store, key){
-    if(!this.ok) return;
-    try{ await new Promise(res => { const r = this.tx(store,'readwrite').delete(key); r.onsuccess = res; r.onerror = res; }); }catch(e){}
+    if(!this.ok) return true;
+    try{ await new Promise((res,rej) => { const r = this.tx(store,'readwrite').delete(key); r.onsuccess = res; r.onerror = () => rej(r.error); }); return true; }
+    catch(e){ storageFault(e); return false; }
   },
   async all(store){
     if(!this.ok) return [];
-    try{ return await new Promise(res => { const r = this.tx(store,'readonly').getAll(); r.onsuccess = () => res(r.result||[]); r.onerror = () => res([]); }); }catch(e){ return []; }
+    try{ return await new Promise((res,rej) => { const r = this.tx(store,'readonly').getAll(); r.onsuccess = () => res(r.result||[]); r.onerror = () => rej(r.error); }); }
+    catch(e){ storageFault(e); return []; }
   },
   async get(store, key){
     if(!this.ok) return null;
-    try{ return await new Promise(res => { const r = this.tx(store,'readonly').get(key); r.onsuccess = () => res(r.result ?? null); r.onerror = () => res(null); }); }catch(e){ return null; }
-  },
-  // Одна транзакция на пачку. Разбор имён у 740 треков — это 740 отдельных
-  // транзакций подряд на старте, то есть заметная пауза на пустом экране.
-  async putMany(store, items){
-    if(!this.ok || !items.length) return;
-    try{
-      await new Promise((res, rej) => {
-        const tx = this.db.transaction(store, 'readwrite'), os = tx.objectStore(store);
-        items.forEach(v => os.put(v));
-        tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
-      });
-    }catch(e){}
+    try{ return await new Promise((res,rej) => { const r = this.tx(store,'readonly').get(key); r.onsuccess = () => res(r.result ?? null); r.onerror = () => rej(r.error); }); }
+    catch(e){ storageFault(e); return null; }
   },
   async clear(store){
-    if(!this.ok) return;
-    try{ await new Promise(res => { const r = this.tx(store,'readwrite').clear(); r.onsuccess = res; r.onerror = res; }); }catch(e){}
+    if(!this.ok) return true;
+    try{ await new Promise((res,rej) => { const r = this.tx(store,'readwrite').clear(); r.onsuccess = res; r.onerror = () => rej(r.error); }); return true; }
+    catch(e){ storageFault(e); return false; }
+  },
+  async clearAll(stores){
+    if(!this.ok) return true;
+    try{
+      await new Promise((res,rej) => {
+        const tx = this.db.transaction(stores, 'readwrite');
+        stores.forEach(s => tx.objectStore(s).clear());
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+      });
+      return true;
+    }catch(e){ storageFault(e); return false; }
   }
 };
+let storageWarned = false;
+function storageFault(e){
+  DB.ok = false;
+  $('#dbDot').classList.add('off');
+  $('#dbTxt').textContent = 'ОШИБКА ПАМЯТИ';
+  if(!storageWarned){ storageWarned = true; toast('ПАМЯТЬ НЕ СОХРАНЯЕТ // ИЗМЕНЕНИЯ ТОЛЬКО ДО ЗАКРЫТИЯ'); }
+  console.error('IndexedDB:', e);
+}
 
 /* ─── СОСТОЯНИЕ ───────────────────────────────────────── */
 const S = {
@@ -834,7 +856,13 @@ const CORPS = {
 /* ─── АУДИОГРАФ ───────────────────────────────────────── */
 const A = { ctx:null, decks:[], active:0, eq:[], cmp:null, cmpIn:null, cmpOut:null,
             wideIn:null, wideOut:null, splitter:null, merger:null, delay:null,
-            master:null, an:null, data:null, wave:null, wired:false };
+            master:null, an:null, data:null, wave:null, wired:false, error:null };
+
+function audioFault(e){
+  A.error = e || new Error('audio graph');
+  console.error('audio graph:', A.error);
+  toast('ЗВУКОВОЙ ТРАКТ НЕ ПОДНЯЛСЯ // EQ И ВИЗУАЛИЗАТОР ОТКЛЮЧЕНЫ');
+}
 
 function wire(){
   if(A.wired) return;
@@ -882,7 +910,7 @@ function wire(){
     A.data = new Uint8Array(A.an.frequencyBinCount);
     A.wave = new Uint8Array(A.an.fftSize);
     applyEQ(); applyFX();
-  }catch(e){ console.warn('audio graph:', e); }
+  }catch(e){ audioFault(e); }
 }
 const au = () => S.mode === 'radio' ? $('#a2') : $(A.active === 0 ? '#a0' : '#a1');
 const other = () => A.active === 0 ? 1 : 0;
@@ -899,7 +927,7 @@ function applyFX(){
     S.fx.cmp ? A.cmpIn.connect(A.cmp) : A.cmpIn.connect(A.cmpOut);
     A.wideIn.disconnect();
     S.fx.wide ? A.wideIn.connect(A.splitter) : A.wideIn.connect(A.wideOut);
-  }catch(e){}
+  }catch(e){ audioFault(e); }
 }
 
 /* ─── ИМПОРТ ──────────────────────────────────────────── */
@@ -960,12 +988,13 @@ async function imports(files){
       id: uid(), file: f, name: f.name, size: f.size, type: f.type || 'audio/*',
       title: f.name.replace(/\.[^.]+$/,'').replace(/^\d{1,2}[\s._-]+/,''),
       artist: 'НЕИЗВЕСТНЫЙ', album: 'БЕЗ АЛЬБОМА', year:'', genre:'', no:'',
-      dur: 0, art: null, artURL: null, url: null, lyrics: '', plays: 0, fav: false, added: Date.now()
+      dur: 0, art: null, artURL: null, url: null, lyrics: '', plays: 0, skips: 0,
+      fav: false, ai: null, added: Date.now()
     };
     S.lib.push(t); S.byId.set(t.id, t); fresh.push(t);
   }
   render();
-  for(const t of fresh){ await tags(t); guess(t); probe(t); save(t); }
+  for(const t of fresh){ await tags(t); probe(t); await save(t); }
   render(); stats();
   if(S.qpos < 0 && fresh.length) { S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false); }
   permUI();
@@ -1003,28 +1032,39 @@ function scanReport(r){
   if($('#shAll')) $('#shAll').onclick = () => { closeSheet(); nativeScan(true); };
 }
 
+let tagsWarned = false;
 function tags(t){
   return new Promise(res => {
-    if(!window.jsmediatags) return res();
+    if(!window.jsmediatags){
+      if(!tagsWarned){ tagsWarned = true; toast('МОДУЛЬ ТЕГОВ НЕ ЗАГРУЖЕН // ИМЕНА ИЗ ФАЙЛОВ'); }
+      return res();
+    }
+    let settled = false;
+    const done = () => { if(!settled){ settled = true; res(); } };
+    const apply = g => {
+      if(g.title) t.title = g.title;
+      if(g.artist) t.artist = g.artist;
+      if(g.album) t.album = g.album;
+      if(g.year) t.year = String(g.year);
+      if(g.genre) t.genre = g.genre;
+      if(g.track) t.no = String(g.track).split('/')[0];
+      if(g.lyrics) t.lyrics = (typeof g.lyrics === 'string' ? g.lyrics : g.lyrics.lyrics) || '';
+      if(g.picture){
+        try{ t.art = new Blob([new Uint8Array(g.picture.data)], {type:g.picture.format}); }
+        catch(e){ console.warn('embedded artwork:', e); }
+      }
+    };
     try{
       window.jsmediatags.read(t.file, {
         onSuccess: ({tags:g}) => {
-          if(g.title) t.title = g.title;
-          if(g.artist) t.artist = g.artist;
-          if(g.album) t.album = g.album;
-          if(g.year) t.year = String(g.year);
-          if(g.genre) t.genre = g.genre;
-          if(g.track) t.no = String(g.track).split('/')[0];
-          if(g.lyrics) t.lyrics = (typeof g.lyrics === 'string' ? g.lyrics : g.lyrics.lyrics) || '';
-          if(g.picture){
-            try{ t.art = new Blob([new Uint8Array(g.picture.data)], {type:g.picture.format}); }catch(e){}
-          }
-          res();
+          apply(g);
+          if(settled){ save(t); softRender(); }
+          done();
         },
-        onError: () => res()
+        onError: done
       });
-      setTimeout(res, 3000);
-    }catch(e){ res(); }
+      setTimeout(done, 3000);
+    }catch(e){ console.warn('tags:', e); done(); }
   });
 }
 
@@ -1065,12 +1105,18 @@ function softRender(){                   // не чаще 2.5 раз в секу
 const CAP = window.Capacitor;
 /* Мост жив, только если в странице есть рантайм @capacitor/core.
    Android сам впрыскивает лишь native-bridge.js — этого мало. */
-const BRIDGE = !!(CAP && typeof CAP.registerPlugin === 'function');
+const BRIDGE = !!(CAP && typeof CAP.registerPlugin === 'function' &&
+  typeof CAP.isNativePlatform === 'function' && typeof CAP.convertFileSrc === 'function');
 const NATIVE = BRIDGE && CAP.isNativePlatform();
-const reg = n => { try{ return CAP.registerPlugin(n); }catch(e){ return null; } };
-const Scanner = NATIVE ? reg('MusicScanner') : null;
+const available = n => NATIVE && typeof CAP.isPluginAvailable === 'function' && CAP.isPluginAvailable(n);
+const reg = n => {
+  try{ return available(n) ? CAP.registerPlugin(n) : null; }
+  catch(e){ console.error(`plugin ${n}:`, e); return null; }
+};
+const Scanner = reg('MusicScanner');
+const Analyzer = reg('AudioAnalyzer');
 // Если бридж не поднялся внутри APK — это поломка сборки, а не «просто веб». Кричим.
-if(!BRIDGE && /^https?:\/\/localhost/.test(location.origin)){
+if(CAP && !BRIDGE){
   setTimeout(() => toast('РАНТАЙМ CAPACITOR НЕ ЗАГРУЖЕН // НАТИВ НЕДОСТУПЕН'), 1500);
 }
 
@@ -1094,37 +1140,32 @@ function artURL(t){
   return S.covers.get(ckey(t)) || null;
 }
 
-function rec(t){
+function save(t){
   const m = {id:t.id, name:t.name, size:t.size, type:t.type, title:t.title, artist:t.artist,
-    album:t.album, year:t.year, genre:t.genre, no:t.no, dur:t.dur, folder:t.folder, guessed:t.guessed,
-    lyrics:t.lyrics, plays:t.plays, fav:t.fav, added:t.added};
-  return t.native
+    album:t.album, year:t.year, genre:t.genre, no:t.no, dur:t.dur, folder:t.folder,
+    lyrics:t.lyrics, plays:t.plays, skips:t.skips || 0, fav:t.fav, added:t.added,
+    ai:t.ai || null};
+  return DB.put('tracks', t.native
     ? Object.assign(m, {native:true, uri:t.uri, artUri:t.artUri})
-    : Object.assign(m, {file:t.file, art:t.art});
+    : Object.assign(m, {file:t.file, art:t.art}));
 }
-function save(t){ DB.put('tracks', rec(t)); }
 
 /* Обложки из MediaStore есть не у всех альбомов — битую ссылку прячем.
    error не всплывает, ловим в фазе перехвата. */
 addEventListener('error', e => {
   const el = e.target;
-  if(el && el.tagName === 'IMG'){ el.style.visibility = 'hidden'; return; }
-  // Всё остальное — настоящая ошибка. На телефоне консоли нет, поэтому в тост.
-  if(e.message) toast('СБОЙ: ' + String(e.message).slice(0, 70));
+  if(el && el.tagName === 'IMG') el.style.visibility = 'hidden';
 }, true);
-addEventListener('unhandledrejection', e => {
-  const m = e.reason && (e.reason.message || e.reason.code) || e.reason;
-  toast('СБОЙ: ' + String(m).slice(0, 70));
-});
 
 async function nativeScan(includeAll = false){
-  if(!Scanner) return toast('НАТИВНЫЙ СКАНЕР ТОЛЬКО В APK');
+  if(!Scanner) return toast(NATIVE ? 'ПЛАГИН СКАНЕРА НЕ ПОДНЯЛСЯ' : 'НАТИВНЫЙ СКАНЕР ТОЛЬКО В APK');
   toast(includeAll ? 'ЗАБИРАЮ ВСЁ, ВКЛЮЧАЯ РИНГТОНЫ...' : 'ЧИТАЮ ИНДЕКС MEDIASTORE...');
   let res;
   try{ res = await Scanner.scan({includeAll}); }
   catch(e){ return toast(e && e.code === 'DENIED' ? 'ДОСТУП НЕ ВЫДАН' : 'СБОЙ СКАНЕРА'); }
+  if(!res || !Array.isArray(res.tracks)) return toast('СКАНЕР ВЕРНУЛ ПОВРЕЖДЁННЫЙ ОТВЕТ');
 
-  let added = 0, dupes = 0;
+  let added = 0, dupes = 0, writes = [];
   for(const n of res.tracks){
     const id = 'ms' + n.id;
     if(S.byId.has(id)){ dupes++; continue; }
@@ -1134,150 +1175,17 @@ async function nativeScan(includeAll = false){
       title:n.title || n.name, album:n.album || 'БЕЗ АЛЬБОМА',
       artist:(!n.artist || n.artist === '<unknown>') ? 'НЕИЗВЕСТНЫЙ' : n.artist,
       year:n.year ? String(n.year) : '', genre:n.genre || '', no:n.no ? String(n.no) : '',
-      dur:n.dur || 0, art:null, lyrics:'', plays:0, fav:false, added:Date.now(), folder:n.folder || ''
+      dur:n.dur || 0, art:null, lyrics:'', plays:0, skips:0, fav:false, ai:null,
+      added:Date.now(), folder:n.folder || ''
     };
-    guess(t);
-    S.lib.push(t); S.byId.set(id, t); save(t); added++;
+    S.lib.push(t); S.byId.set(id, t); writes.push(save(t)); added++;
   }
+  await Promise.all(writes);
   if(S.qpos < 0 && added){ S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false); }
   render(); stats(); permUI();
   scanReport({total:res.count + (res.skipped||0), audio:res.count, added, dupes, bad:[],
               folders:res.folderCount||0, folderList:res.folders||[], skipped:res.skipped||0, native:true});
 }
-/* ─── РАЗБОР ИМЕНИ ФАЙЛА ──────────────────────────────────
-   Бесплатно, офлайн, мгновенно. У Drew 207 треков с артистом
-   «НЕИЗВЕСТНЫЙ», хотя артист написан прямо в имени файла:
-   «Miyagi Эндшпиль - No contest (hit).mp3». Тегов нет — а имя есть. */
-/* Скобка — мусор, только если мусор КАЖДОЕ слово внутри. Иначе
-   «(Official Video)» проходило мимо, а «(feat. Andy Panda)» могло сгинуть. */
-const JUNKW = /^(official|lyrics?|lyric|audio|video|clip|hd|hq|fullhd|4k|full|explicit|clean|dirty|remaster|remastered|version|ver|edit|\d{2,3}|kbps|mp3|flac|new|hit|top|премьера|скачать|бесплатно|музыка|альбом|треки?|\d{4})$/i;
-const isJunk = str => {
-  const w = String(str).split(/[\s\-–—.,_|]+/).filter(Boolean);
-  return w.length > 0 && w.length <= 4 && w.every(x => JUNKW.test(x));
-};
-
-function fromName(name){
-  let x = String(name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-  x = x.replace(/^\s*\d{1,3}\s*[.\-–—)\]]\s+/, '');        // «01. », «03 - » в начале
-  // Скобки сносим, только если внутри мусор. «(feat. Andy Panda)» и «(Remix)» — часть названия.
-  x = x.replace(/[([{]([^)\]}]*)[)\]}]/g, (m, inner) => isJunk(inner) ? ' ' : m);
-  x = x.replace(/\s{2,}/g, ' ').trim();
-  const p = x.split(/\s+[-–—]\s+/);
-  if(p.length >= 2 && p[0].trim().length >= 2 && p[0].trim().length <= 60)
-    return {artist:p[0].trim(), title:p.slice(1).join(' - ').trim()};
-  return {artist:null, title:x};
-}
-
-/* Трогаем только пустые места. Хороший тег важнее любой догадки. */
-function guess(t){
-  if(t.artist && t.artist !== 'НЕИЗВЕСТНЫЙ') return false;
-  const g = fromName(t.name);
-  if(!g.artist) return false;
-  t.artist = g.artist;
-  if(g.title) t.title = g.title;
-  t.guessed = true;
-  return true;
-}
-
-/* ─── УМНЫЙ РАЗБОР ЖАНРОВ ─────────────────────────────────
-   MusicBrainz русский рэп знает плохо, а языковая модель знает.
-   Ключ вводит сам пользователь и он лежит только на устройстве:
-   зашить свой в открытый репозиторий — значит подарить его первому
-   встречному. Наружу уходят имя артиста и название, файлы — никогда. */
-const AI = {key:'', model:'claude-haiku-4-5-20251001'};
-const GENRES = ['хип-хоп','рэп','рок','метал','панк','электроника','техно','хаус','транс',
-  'драм-н-бейс','дабстеп','поп','дэнс','джаз','блюз','классика','эмбиент','инди','шансон',
-  'регги','фолк','саундтрек','кантри','соул','фанк','рнб'];
-
-async function aiAsk(list, tries = 3){
-  const lines = list.map((t,i) => `${i}. ${t.artist} — ${t.title}`).join('\n');
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{
-      'content-type':'application/json',
-      'x-api-key': AI.key,
-      'anthropic-version':'2023-06-01',
-      // Без этого заголовка API отвечает отказом на любой запрос из браузера
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body: JSON.stringify({
-      model: AI.model,
-      max_tokens: 4000,
-      system: `Ты определяешь жанр музыки. Отвечай ТОЛЬКО JSON-массивом, без пояснений, без markdown.
-Формат: [{"i":0,"g":"хип-хоп"}]
-Поле g — ровно одно значение из списка: ${GENRES.join(', ')}.
-Не знаешь исполнителя — верни "g":"" и не выдумывай.`,
-      messages:[{role:'user', content:'Определи жанр каждого трека:\n' + lines}]
-    })
-  });
-  // 429 — «слишком часто», 529 — «перегружены». Это «подожди», а не отказ.
-  // На 740 треках это 13 запросов подряд, поймать легко.
-  if((r.status === 429 || r.status === 529) && tries > 0){
-    const wait = +(r.headers.get('retry-after') || 0) * 1000 || (4 - tries) * 4000;
-    toast(`ЛИМИТ API // ЖДЁМ ${Math.round(wait/1000)} С`);
-    await nap(wait);
-    return aiAsk(list, tries - 1);
-  }
-  if(!r.ok){
-    const e = await r.json().catch(() => null);
-    throw new Error(e?.error?.message || ('HTTP ' + r.status));
-  }
-  const d = await r.json();
-  const txt = (d.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-  const m = txt.replace(/```json|```/g, '').trim();
-  const arr = JSON.parse(m.slice(m.indexOf('['), m.lastIndexOf(']') + 1));
-  return arr;
-}
-
-let brain = false;
-async function think(){
-  if(brain) return;
-  if(!AI.key) return toast('СНАЧАЛА КЛЮЧ');
-  if(navigator.onLine === false) return toast('НЕТ СЕТИ');
-  const need = S.lib.filter(t => !t.genre && t.artist !== 'НЕИЗВЕСТНЫЙ');
-  if(!need.length) return toast('ЖАНРЫ УЖЕ ПРОСТАВЛЕНЫ');
-
-  brain = true; permUI();
-  let done = 0, fails = 0;
-  for(let i = 0; i < need.length; i += 60){
-    if(!brain) break;
-    const part = need.slice(i, i + 60);
-    toast(`РАЗБОР ${done}/${need.length}`);
-    try{
-      const res = await aiAsk(part);
-      const hit = [];
-      res.forEach(x => {
-        const t = part[x.i];
-        if(t && x.g && GENRES.includes(x.g)){ t.genre = x.g; hit.push(t); done++; }
-      });
-      await DB.putMany('tracks', hit.map(rec));      // 60 записей — одна транзакция
-      fails = 0;
-    }catch(e){
-      if(++fails >= 2){ brain = false; permUI(); return toast('СБОЙ: ' + String(e.message).slice(0,50)); }
-    }
-  }
-  brain = false;
-  render(); permUI();
-  toast(done ? `ЖАНР ОПРЕДЕЛЁН У ${done}` : 'НИЧЕГО НЕ ОПОЗНАНО');
-}
-
-/* Ради этого всё и затевалось: жанр сам по себе ничего не делает. */
-function shelve(){
-  const by = new Map();
-  S.lib.forEach(t => { if(!t.genre) return; const k = t.genre.toUpperCase();
-    if(!by.has(k)) by.set(k, []); by.get(k).push(t.id); });
-  if(!by.size) return toast('НЕТ ЖАНРОВ // СНАЧАЛА РАЗБОР');
-  let made = 0;
-  by.forEach((ids, k) => {
-    if(ids.length < 2) return;                       // плейлист из одного трека не нужен
-    const ex = S.playlists.find(p => p.name === k);
-    if(ex) ex.ids = ids; else { S.playlists.push({id:uid(), name:k, ids}); }
-    made++;
-  });
-  saveKV(); render();
-  toast(`РАЗЛОЖЕНО ПО ${made} ЖАНРАМ`);
-}
-
 /* ─── ОБЛОЖКИ ИЗ СЕТИ ─────────────────────────────────────
    MusicBrainz + Cover Art Archive. Почему не iTunes: у него CORS отдаётся
    не «*», а чужим origin (в браузере просто не работает), лимит 20/мин,
@@ -1291,13 +1199,19 @@ const MB = 'https://musicbrainz.org/ws/2';
 const CAA = 'https://coverartarchive.org';
 let mbLast = 0;
 const nap = ms => new Promise(r => setTimeout(r, ms));
+async function fetchTimed(url, options = {}, timeout = 12000){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout);
+  try{ return await fetch(url, Object.assign({}, options, {signal:ctl.signal})); }
+  finally{ clearTimeout(timer); }
+}
 async function mbGet(url, tries = 2){
   for(let i = 0; ; i++){
     const wait = 1100 - (Date.now() - mbLast);   // MusicBrainz: не чаще 1 раза в секунду
     if(wait > 0) await nap(wait);
     mbLast = Date.now();
     let r;
-    try{ r = await fetch(url, {headers:{Accept:'application/json'}}); }
+    try{ r = await fetchTimed(url, {headers:{Accept:'application/json'}}); }
     catch(e){ if(i >= tries) throw e; await nap(1500 * (i+1)); continue; }
     if(r.ok) return r.json();
     // 503 у MusicBrainz — это «притормози», а не отказ. Отступаем и пробуем снова.
@@ -1314,11 +1228,12 @@ async function findCover(artist, album){
     if((rg.score || 0) < 75) continue;           // слабое совпадение — не подсовываем чужое
     if(++tried > 3) break;                       // хватит долбить архив ради одного альбома
     try{
-      const r = await fetch(`${CAA}/release-group/${rg.id}/front-500`);
-      if(!r.ok) continue;                        // у релиза просто нет обложки
+      const r = await fetchTimed(`${CAA}/release-group/${rg.id}/front-500`);
+      if(r.status === 404) continue;              // подтверждённый промах, его можно кешировать
+      if(!r.ok) throw new Error('caa ' + r.status); // сбой сервиса — не выдаём за отсутствие
       const b = await r.blob();
       if(b.size > 700) return b;
-    }catch(e){}
+    }catch(e){ throw e; }
   }
   return null;
 }
@@ -1358,7 +1273,7 @@ async function hunt(){
     }
     // null тоже пишем: значит искали и не нашли, второй раз не полезем
     S.covers.set(k, blob ? URL.createObjectURL(blob) : null);
-    DB.put('covers', blob, k);
+    await DB.put('covers', blob, k);
     if(blob){ found++; softRender(); }
   }
   hunting = false;
@@ -1369,11 +1284,14 @@ async function hunt(){
 let kvT = null;
 function saveKV(){   // дебаунс: не молотим IndexedDB на каждый чих
   clearTimeout(kvT);
-  kvT = setTimeout(() => DB.put('kv', {
-    shuffle:S.shuffle, repeat:S.repeat, vol:S.vol, rate:S.rate, playlists:S.playlists,
-    cred:S.cred, corp:S.corp, eq:S.eq, fx:S.fx, viz:S.viz, sort:S.sort, net:S.net,
-    queue:S.queue, qsrc:S.qsrc, qpos:S.qpos, station:S.station
-  }, 'cfg'), 400);
+  kvT = setTimeout(() => {
+    kvT = null;
+    DB.put('kv', {
+      shuffle:S.shuffle, repeat:S.repeat, vol:S.vol, rate:S.rate, playlists:S.playlists,
+      cred:S.cred, corp:S.corp, eq:S.eq, fx:S.fx, viz:S.viz, sort:S.sort, net:S.net,
+      queue:S.queue, qsrc:S.qsrc, qpos:S.qpos, station:S.station
+    }, 'cfg');
+  }, 400);
 }
 
 /* ─── ОЧЕРЕДЬ ─────────────────────────────────────────── */
@@ -1402,19 +1320,36 @@ function setQueue(ids, startId){
 
 /* ─── ВОСПРОИЗВЕДЕНИЕ ─────────────────────────────────── */
 let xfArmed = false, fadeTimer = null;
+let failedMedia = '';
+
+function trackFailure(el){
+  if(S.mode === 'radio' || el !== au() || !el.src) return;
+  const src = el.currentSrc || el.src;
+  if(src === failedMedia) return;
+  failedMedia = src;
+  toast('ФАЙЛ НЕ ЧИТАЕТСЯ // ПРОПУСК');
+  // Ошибка декодера — автопереход, а не ручная кнопка. Иначе на
+  // последнем битом файле repeat=off зацикливал бы всю очередь.
+  setTimeout(() => { if(S.mode !== 'radio' && el === au() && (el.currentSrc || el.src) === src) step(1, false); }, 0);
+}
+function playRejected(el, e){
+  if(e && e.name === 'NotAllowedError') return toast('ВОСПРОИЗВЕДЕНИЕ ЗАБЛОКИРОВАНО // НАЖМИ PLAY');
+  trackFailure(el);
+}
 
 function load(pos, autoplay = true, viaFade = false){
   if(pos < 0 || pos >= S.queue.length) return;
   const t = S.byId.get(S.queue[pos]);
   if(!t) return;
   S.qpos = pos;
+  failedMedia = '';
   xfArmed = false;
   counted = false;
 
   if(viaFade && A.ctx && S.fx.xf > 0){
     const nx = other(), d = A.decks[nx], cur = A.decks[A.active];
     d.el.src = url(t); d.el.playbackRate = S.rate; d.el.currentTime = 0;
-    d.el.play().catch(()=>{});
+    d.el.play().catch(e => playRejected(d.el, e));
     const now = A.ctx.currentTime, f = S.fx.xf;
     d.gain.gain.cancelScheduledValues(now); d.gain.gain.setValueAtTime(0, now); d.gain.gain.linearRampToValueAtTime(1, now + f);
     cur.gain.gain.cancelScheduledValues(now); cur.gain.gain.setValueAtTime(cur.gain.gain.value, now); cur.gain.gain.linearRampToValueAtTime(0, now + f);
@@ -1441,9 +1376,10 @@ function paint(t){
   $('#nt').textContent = t.title;
   $('#na').textContent = [t.artist, t.album].filter(x => x && x !== 'БЕЗ АЛЬБОМА').join('  ·  ') || t.artist;
   const st = S.station ? STATIONS.find(x => x.f === S.station) : null;
+  const aiGenre = t.ai && t.ai.genre ? `  ·  AI ${t.ai.genre}` : '';
   $('#ne').textContent = st
     ? `📻 ${st.f} FM  ·  ${st.n}  ·  ЖИВОЙ ЭФИР`
-    : `СЛОТ ${String(S.qpos+1).padStart(2,'0')}/${String(S.queue.length).padStart(2,'0')}  ·  ${(t.type.split('/')[1]||'AUD').toUpperCase()}  ·  ${t.year || '—'}`;
+    : `СЛОТ ${String(S.qpos+1).padStart(2,'0')}/${String(S.queue.length).padStart(2,'0')}  ·  ${(t.type.split('/')[1]||'AUD').toUpperCase()}  ·  ${t.year || '—'}${aiGenre}`;
   $('#miniT').textContent = t.title;
   $('#miniA').textContent = t.artist;
   $('#mini').classList.remove('dead');
@@ -1463,10 +1399,10 @@ function glitch(){
 function play(){
   const el = au();
   if(!el.src) return;
-  if(S.mode === 'radio'){ el.volume = S.vol; el.play().catch(() => {}); return; }
+  if(S.mode === 'radio'){ el.volume = S.vol; el.play().catch(e => radioPlayRejected(e)); return; }
   wire(); resume();
   el.playbackRate = S.rate;
-  el.play().catch(() => {});
+  el.play().catch(e => playRejected(el, e));
 }
 function pause(){ A.decks.forEach(d => d.el.pause()); $('#a2').pause(); }
 function toggle(){ au().paused ? play() : pause(); }
@@ -1475,9 +1411,16 @@ function step(d, manual = true){
   if(S.mode === 'radio') return hop(d);        // на эфире ⏭ — это следующая станция
   if(!S.queue.length) return;
   if(S.repeat === 'one' && !manual){ au().currentTime = 0; play(); return; }
+  const leaving = cur(), el = au();
+  // Ручной пропуск до 30 с — явный сигнал для «ДЛЯ ТЕБЯ».
+  if(manual && S.queue.length > 1 && leaving && !el.paused && el.currentTime < 30){
+    leaving.skips = (leaving.skips || 0) + 1;
+    save(leaving);
+  }
   let n = S.qpos + d;
   if(n >= S.queue.length){
-    if(S.repeat === 'off'){ pause(); au().currentTime = 0; return; }
+    // repeat=off останавливает только автопереход. Кнопка и свайп всегда листают.
+    if(!manual && S.repeat === 'off'){ pause(); au().currentTime = 0; return; }
     n = 0;
   }
   if(n < 0) n = S.queue.length - 1;
@@ -1488,10 +1431,8 @@ $('#pl').onclick = toggle;
 $('#miniPlay').onclick = e => { e.stopPropagation(); toggle(); };
 $('#next').onclick = () => step(1);
 $('#miniNext').onclick = e => { e.stopPropagation(); step(1); };
-// На эфире «назад» — это соседняя станция, а не отмотка потока в ноль
-const back = () => S.mode === 'radio' ? hop(-1) : (au().currentTime > 3 ? (au().currentTime = 0) : step(-1));
-$('#prev').onclick = back;
-$('#miniPrev').onclick = e => { e.stopPropagation(); back(); };
+$('#prev').onclick = () => step(-1);
+$('#miniPrev').onclick = e => { e.stopPropagation(); step(-1); };
 
 $('#shuf').onclick = e => {
   S.shuffle = !S.shuffle;
@@ -1521,20 +1462,22 @@ $('#rep').onclick = e => {
 ['#a0','#a1','#a2'].forEach(sel => {
   const el = $(sel);
   el.addEventListener('play', () => { if(el !== au()) return;
+    if(S.mode === 'radio'){ radioLive = true; radioFails = 0; radioFailedTicket = 0; paintRadio(S.stList[S.stIdx]); radioUI(); }
     icon(true); document.body.classList.remove('paused'); $('#audDot').classList.remove('off');
     msState('playing'); ensureNotify(); liveUI(); });
   el.addEventListener('pause', () => { if(el !== au()) return;
+    if(S.mode === 'radio'){ radioLive = false; radioUI(); }
     icon(false); document.body.classList.add('paused'); $('#audDot').classList.add('off');
     msState('paused'); liveUI(); });
   el.addEventListener('ended', () => {
     if(el !== au()) return;
-    if(S.mode === 'radio') return hop(1);       // поток оборвался — ищем следующий
+    if(S.mode === 'radio') return;              // у радио свой обработчик с защитой от гонок
     S.repeat === 'one' ? (el.currentTime = 0, play()) : step(1, false);
   });
   el.addEventListener('error', () => {
     if(el !== au() || !el.src) return;
-    if(S.mode === 'radio'){ toast('СТАНЦИЯ НЕ ОТВЕЧАЕТ // ИЩУ ДАЛЬШЕ'); return hop(1); }
-    toast('ФАЙЛ НЕ ЧИТАЕТСЯ // ПРОПУСК');
+    if(S.mode === 'radio') return;              // у радио свой обработчик с лимитом попыток
+    trackFailure(el);
   });
   el.addEventListener('timeupdate', () => { if(el === au()) tick(); });
 });
@@ -1548,8 +1491,7 @@ function icon(on){
 let lastTick = 0, playedMs = 0, counted = false;
 function tick(){
   const el = au();
-  if(S.mode === 'radio') return tickAir(el);   // у эфира нет длительности — считать нечего
-  if(!el.duration || !isFinite(el.duration)) return;
+  if(!el.duration) return;
   // засчитываем прослушивание после 20 с или половины трека
   if(!counted && el.currentTime > Math.min(20, el.duration * .5)){
     counted = true;
@@ -1576,19 +1518,6 @@ function tick(){
   lastTick = now;
 }
 
-/* У живого потока duration === Infinity. Раньше сюда приходил общий tick():
-   Math.min(20, Infinity*.5) давал 20, и через двадцать секунд эфира дека
-   накручивала прослушивание и XP треку, который просто лежал в очереди. */
-function tickAir(el){
-  $('#ct').textContent = fmt(el.currentTime);
-  $('#tt').textContent = 'ЭФИР';
-  $('#fill').style.width = '100%';
-  $('#miniRing').style.setProperty('--p', 100);
-  const now = performance.now();
-  if(!el.paused && lastTick && now - lastTick < 2000) S.cred.ms += now - lastTick;
-  lastTick = now;
-}
-
 /* ─── ПЕРЕМОТКА ───────────────────────────────────────── */
 const rail = $('#rail');
 let scrub = false;
@@ -1599,15 +1528,12 @@ function seekAt(e){
   $('#fill').style.width = p*100 + '%';
   return p;
 }
-rail.addEventListener('pointerdown', e => {
-  if(S.mode === 'radio') return;               // живой поток не мотается
-  scrub = true; rail.setPointerCapture(e.pointerId); seekAt(e);
-});
+rail.addEventListener('pointerdown', e => { scrub = true; rail.setPointerCapture(e.pointerId); seekAt(e); });
 rail.addEventListener('pointermove', e => { if(scrub) seekAt(e); });
 rail.addEventListener('pointerup', e => {
   if(!scrub) return; scrub = false;
   const p = seekAt(e), el = au();
-  if(el.duration && isFinite(el.duration)) el.currentTime = p * el.duration;
+  if(el.duration) el.currentTime = p * el.duration;
 });
 rail.addEventListener('pointercancel', () => scrub = false);
 
@@ -1623,8 +1549,8 @@ $('#volR').onchange = saveKV;
 
 /* ─── ЭКРАН "СЕЙЧАС" ──────────────────────────────────── */
 const now = $('#now');
-$('#mini').onclick = () => { if(S.qpos >= 0 || S.mode === 'radio'){ now.classList.add('up'); armBack(); } };
-$('#nowDown').onclick = () => now.classList.remove('up');
+$('#mini').onclick = () => { if(S.qpos >= 0) now.classList.add('up'); armBack(); };
+$('#nowDown').onclick = () => { if(now.classList.contains('up')){ now.classList.remove('up'); releaseBack(); } };
 $('#nowFav').onclick = () => { const t = cur(); if(!t) return; t.fav = !t.fav; save(t); paint(t); render(); toast(t.fav ? 'В ИЗБРАННОМ' : 'УБРАНО ИЗ ИЗБРАННОГО'); };
 $('#nowMore').onclick = () => { const t = cur(); if(t) menu(t); };
 const cur = () => S.qpos >= 0 ? S.byId.get(S.queue[S.qpos]) : null;
@@ -1640,44 +1566,49 @@ now.addEventListener('touchstart', e => {
 now.addEventListener('touchend', e => {
   if(sGuard) return;
   const dy = e.changedTouches[0].clientY - sy;
-  if(dy > 90 && !$('#stage').contains(e.target) && !$('#lyr').classList.contains('on')) now.classList.remove('up');
+  if(dy > 90 && !$('#stage').contains(e.target) && !$('#lyr').classList.contains('on')){ now.classList.remove('up'); releaseBack(); }
 }, {passive:true});
 
-/* Свайп влево-вправо по сцене — следующий и предыдущий трек.
-   Вертикаль не трогаем: за ней закреплён свайп вниз, закрывающий экран. */
+/* Свайп влево-вправо по сцене. Pointer Events + capture нужны
+   именно в Android WebView: touch-жест раньше мог уйти браузеру и
+   закончиться touchcancel до вызова step(). touch-action:pan-y оставляет
+   вертикаль браузеру, а горизонталь — деке. */
 {
   const st = $('#stage');
-  let x0 = 0, y0 = 0, live = false;
-  st.addEventListener('touchstart', e => {
-    if(e.touches.length !== 1 || $('#lyr').classList.contains('on')) { live = false; return; }
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; live = true;
-  }, {passive:true});
-  st.addEventListener('touchmove', e => {
-    if(!live) return;
-    const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+  let x0 = 0, y0 = 0, pid = null;
+  const reset = () => { pid = null; st.style.transform = ''; };
+  st.addEventListener('pointerdown', e => {
+    if(!e.isPrimary || $('#lyr').classList.contains('on')) return reset();
+    pid = e.pointerId; x0 = e.clientX; y0 = e.clientY;
+    st.setPointerCapture(e.pointerId);
+  });
+  st.addEventListener('pointermove', e => {
+    if(e.pointerId !== pid) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
     if(Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy)) return;
     st.style.transform = `translateX(${Math.max(-40, Math.min(40, dx * .25))}px)`;  // сцена идёт за пальцем
-  }, {passive:true});
-  st.addEventListener('touchend', e => {
-    st.style.transform = '';
-    if(!live) return;
-    live = false;
-    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+  });
+  st.addEventListener('pointerup', e => {
+    if(e.pointerId !== pid) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    reset();
     // 60 px и явно горизонтально — иначе это скролл или свайп вниз
     if(Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     if(!S.queue.length) return;
     step(dx < 0 ? 1 : -1);
-  }, {passive:true});
-  st.addEventListener('touchcancel', () => { live = false; st.style.transform = ''; }, {passive:true});
+  });
+  st.addEventListener('pointercancel', reset);
+  st.addEventListener('lostpointercapture', reset);
 }
 
 $('#vizBtn').onclick = () => { S.viz = (S.viz + 1) % 3; $('#vizBtn').textContent = 'ВИЗ · ' + (S.viz+1); saveKV(); };
 $('#lyrBtn').onclick = () => {
   const t = cur();
   if(!t || !t.lyrics) return toast('ТЕКСТ НЕ ВШИТ В ФАЙЛ');
-  $('#lyr').classList.toggle('on');
-  $('#lyrBtn').classList.toggle('on');
-  armBack();
+  const on = !$('#lyr').classList.contains('on');
+  $('#lyr').classList.toggle('on', on);
+  $('#lyrBtn').classList.toggle('on', on);
+  on ? armBack() : releaseBack();
 };
 $('#bdBtn').onclick = () => {
   const on = !document.body.classList.contains('bd');
@@ -1686,11 +1617,11 @@ $('#bdBtn').onclick = () => {
   $('.nowmeta').classList.toggle('hidden', on);
   $('.deck').classList.toggle('hidden', on);
   $('#nowLbl').textContent = on ? 'BRAINDANCE // ПОГРУЖЕНИЕ' : 'ВОСПРОИЗВЕДЕНИЕ';
-  if(on) now.classList.add('up'); armBack();
+  if(on){ now.classList.add('up'); armBack(); }
+  else releaseBack();
 };
 $('#abBtn').onclick = () => {
-  if(S.mode === 'radio') return toast('НА ЭФИРЕ ПЕТЛЯ НЕВОЗМОЖНА');
-  const el = au(); if(!el.duration || !isFinite(el.duration)) return;
+  const el = au(); if(!el.duration) return;
   const b = $('#abBtn');
   if(!S.ab){ S.ab = [el.currentTime, null]; b.textContent = 'A ✓'; b.classList.add('on'); mark(); toast('ТОЧКА A'); }
   else if(S.ab[1] == null){
@@ -1715,7 +1646,9 @@ $('#nav').addEventListener('click', e => {
   S.view = b.dataset.v;
   $$('#nav button').forEach(x => x.classList.toggle('act', x === b));
   $$('.view').forEach(v => v.classList.toggle('act', v.id === 'v-' + S.view));
-  render(); armBack();
+  render();
+  layers().length ? armBack() : releaseBack();
+  if(S.view === 'chip') aiUI();
   if(S.view === 'sys'){ permUI(); topUI(); stats(); }
 });
 $('#libTabs').addEventListener('click', e => {
@@ -1738,7 +1671,8 @@ const EMPTIES = {
 function emptyHTML(tab){
   if(S.q && S.lib.length) return `<div class="empty"><h3>Ничего не нашлось</h3>
     <p>По запросу «${esc(S.q)}» пусто.<br>Проверь раскладку или сотри часть слова.</p></div>`;
-  const e = EMPTIES[tab] || EMPTIES.tracks;
+  const e = Object.assign({}, EMPTIES[tab] || EMPTIES.tracks);
+  if(NATIVE && tab === 'tracks') e.p = 'Нажми «СКАНИРОВАТЬ ТЕЛЕФОН»: Android отдаст деке готовый индекс MediaStore.<br>Музыка из памяти телефона и карты появится без выбора папок.';
   return `<div class="empty"><h3>${e.h}</h3><p>${e.p}</p>
     ${e.btn ? `<button class="btn empBtn">${SCAN_LABEL()}</button>` : ''}</div>`;
 }
@@ -1764,10 +1698,11 @@ function match(t){
 function rowHTML(t, ctx, qi){
   const live = S.qpos >= 0 && S.queue[S.qpos] === t.id;
   const a = artURL(t);
+  const ai = t.ai && t.ai.genre ? ` · AI ${esc(t.ai.genre)}` : '';
   return `<div class="row ${live?'live':''}" data-id="${t.id}" data-ctx="${esc(ctx)}">
     ${live ? '<div class="eqi"><i></i><i></i><i></i></div>'
            : (a ? `<img src="${a}" alt="" loading="lazy" decoding="async">` : `<div class="ph">${esc((t.artist[0]||'?').toUpperCase())}</div>`)}
-    <div class="ri"><div class="r1">${esc(t.title)}</div><div class="r2">${esc(t.artist)}${t.album && t.album!=='БЕЗ АЛЬБОМА' ? ' · ' + esc(t.album) : ''}</div></div>
+    <div class="ri"><div class="r1">${esc(t.title)}</div><div class="r2">${esc(t.artist)}${t.album && t.album!=='БЕЗ АЛЬБОМА' ? ' · ' + esc(t.album) : ''}${ai}</div></div>
     ${t.fav ? '<span class="fav">♥</span>' : ''}
     ${ctx === 'queue'
       ? `<div class="qb"><button data-mv="-1" data-q="${qi}">▲</button><button data-mv="1" data-q="${qi}">▼</button><button class="x" data-rm="${qi}">✕</button></div>`
@@ -1844,7 +1779,7 @@ function pick(id, ctx){
 
 /* B6: лёгкое обновление вместо полной пересборки DOM на play/pause */
 function liveUI(){
-  const id = (S.mode === 'radio' || S.qpos < 0) ? null : S.queue[S.qpos];
+  const id = S.qpos >= 0 ? S.queue[S.qpos] : null;
   $$('.row[data-id]').forEach(r => {
     const live = r.dataset.id === id;
     if(r.classList.contains('live') === live) return;
@@ -1856,7 +1791,7 @@ function radioUI(){
   const rb = $('#radioBody');
   rb.innerHTML = STATIONS.map(st => {
     const on = S.station === st.f;
-    const live = on && S.stList.length && S.stIdx >= 0;
+    const live = on && radioLive && S.stList.length && S.stIdx >= 0;
     const cur = live ? ((S.stList[S.stIdx]||{}).name||'').trim().slice(0,22) : '';
     return `<div class="stn ${on?'on':''}" data-f="${st.f}">
       <div class="fq"><b>${st.f}</b><s>FM</s></div>
@@ -1887,6 +1822,7 @@ function wireEmpty(root){
 
 function render(){
   if(S.view === 'radio') radioUI();
+  if(S.view === 'chip') aiUI();
   // библиотека
   const lb = $('#libBody');
   if(S.view === 'lib'){
@@ -1895,7 +1831,7 @@ function render(){
       lb.innerHTML = `<div class="sect"><span>← ${esc(S.openAlbum)}</span><span>${ts.length} ТР.</span></div>` +
         ts.map(t => rowHTML(t, 'al:' + S.openAlbum)).join('');
       lb.querySelector('.sect').style.cursor = 'pointer';
-      lb.querySelector('.sect').onclick = () => { S.openAlbum = null; render(); };
+      lb.querySelector('.sect').onclick = () => { S.openAlbum = null; render(); releaseBack(); };
     }else if(S.libTab === 'tracks' || S.libTab === 'fav'){
       const ts = sorted().filter(t => match(t) && (S.libTab === 'fav' ? t.fav : true));
       lb.innerHTML = ts.length ? ts.map(t => rowHTML(t, S.libTab)).join('') : emptyHTML(S.libTab);
@@ -1905,7 +1841,8 @@ function render(){
       sorted().filter(match).forEach(t => { const k = t[key] || '—'; if(!map.has(k)) map.set(k, []); map.get(k).push(t); });
       if(!map.size){ lb.innerHTML = emptyHTML(S.libTab); bind(lb); wireEmpty(lb); $('#libSub').textContent = libSub(); return; }
       lb.innerHTML = `<div class="grid">` + [...map].map(([k, ts]) => {
-        const a = artURL(ts.find(x => x.art) || {});
+        const coverTrack = ts.find(x => x.art || (x.native && x.artUri) || S.covers.get(ckey(x))) || ts[0];
+        const a = artURL(coverTrack);
         return `<div class="cardx" data-k="${esc(k)}">
           <div class="cv">${a ? `<img src="${a}" loading="lazy" decoding="async">` : `<span>NO ART</span>`}</div>
           <div class="t">${esc(k)}</div><div class="s">${ts.length} ТР · ${fmt(ts.reduce((s,x)=>s+x.dur,0))}</div></div>`;
@@ -1943,7 +1880,7 @@ function render(){
         (p.ids.length ? p.ids.map(id => { const t = S.byId.get(id); return t ? rowHTML(t, 'pl:' + p.id) : ''; }).join('')
                       : `<div class="empty"><h3>Список пуст</h3><p>Долгое нажатие на треке → «В плейлист».</p></div>`) +
         `<div style="padding:14px 12px"><button class="btn g" id="plDel" style="border-color:var(--warn);color:var(--warn)">УДАЛИТЬ ПЛЕЙЛИСТ</button></div>`;
-      $('#plBack').onclick = () => { S.openPl = null; render(); };
+      $('#plBack').onclick = () => { S.openPl = null; render(); releaseBack(); };
       $('#plDel').onclick = () => { S.playlists = S.playlists.filter(x => x.id !== p.id); S.openPl = null; saveKV(); render(); toast('ПЛЕЙЛИСТ УДАЛЁН'); };
       bind(pb);
     }else{
@@ -1967,9 +1904,13 @@ function render(){
 
 /* ─── ЛИСТЫ ───────────────────────────────────────────── */
 const sheet = $('#sheet');
-sheet.addEventListener('click', e => { if(e.target === sheet) sheet.classList.remove('on'); });
+sheet.addEventListener('click', e => { if(e.target === sheet) closeSheet(); });
 function openSheet(html){ $('#sheetIn').innerHTML = html; sheet.classList.add('on'); armBack(); return $('#sheetIn'); }
-function closeSheet(){ sheet.classList.remove('on'); }
+function closeSheet(){
+  if(!sheet.classList.contains('on')) return;
+  sheet.classList.remove('on');
+  releaseBack();
+}
 
 /* ─── KIROSHI: СКАН ТРЕКА ─────────────────────────────── */
 function scan(t){
@@ -1984,14 +1925,25 @@ function scan(t){
     ['АЛЬБОМ', t.album],
     ['ГОД', t.year || '—'],
     ['ЖАНР', t.genre || '—'],
-    ['АРТИСТ ИЗ', t.guessed ? 'ИМЕНИ ФАЙЛА' : 'ТЕГА'],
     ['ТРЕК №', t.no || '—'],
     ['ПРОСЛУШИВАНИЙ', String(t.plays)],
+    ['ПРОПУСКОВ', String(t.skips || 0)],
     ['ПАПКА', t.folder || '—'],
     ['ДОБАВЛЕН', new Date(t.added).toLocaleDateString('ru-RU')],
     ['ОБЛОЖКА', (t.art || (t.native && t.artUri)) ? 'ИЗ ФАЙЛА' : S.covers.get(ckey(t)) ? 'ИЗ СЕТИ' : 'НЕТ'],
     ['ТЕКСТ', t.lyrics ? 'ВШИТ' : 'НЕТ']
   ];
+  if(t.ai){
+    rows.push(
+      ['AI ЖАНР', `${t.ai.genre || 'НЕ УВЕРЕН'}${t.ai.confidence ? ' · ' + Math.round(t.ai.confidence*100) + '%' : ''}`],
+      ['AI НАСТРОЕНИЕ', (t.ai.moods || []).map(x => x.name).join(', ') || '—'],
+      ['AI ИНСТРУМЕНТЫ', (t.ai.instruments || []).map(x => x.name).join(', ') || '—'],
+      ['AI ЭНЕРГИЯ', Math.round((t.ai.energy || 0)*100) + '%'],
+      ['AI ГОЛОС', Math.round((t.ai.voice || 0)*100) + '%'],
+      ['AI ТЕМП', t.ai.bpm ? t.ai.bpm + ' BPM · оценка DSP' : 'НЕ УВЕРЕН'],
+      ['AI МОДЕЛЬ', `${t.ai.model || 'YAMNet'} · локально`]
+    );
+  }
   const el = openSheet(`
     <div class="sheet-h"><div class="t">KIROSHI // СКАН</div><button class="icb" id="shX"><svg viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button></div>
     <div class="scan" style="position:relative;overflow:hidden">
@@ -2008,14 +1960,16 @@ function scan(t){
     <div class="opt" id="mQ"><svg viewBox="0 0 24 24"><path d="M3 5h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm11-1h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/></svg>В конец очереди</div>
     <div class="opt" id="mFav"><svg viewBox="0 0 24 24"><path d="M12 21l-1.5-1.3C5.4 15.1 2 12.1 2 8.5A4.5 4.5 0 0 1 6.5 4 5 5 0 0 1 12 6a5 5 0 0 1 5.5-2A4.5 4.5 0 0 1 22 8.5c0 3.6-3.4 6.6-8.5 11.2z"/></svg>${t.fav ? 'Убрать из избранного' : 'В избранное'}</div>
     <div class="opt" id="mPl"><svg viewBox="0 0 24 24"><path d="M3 5h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm12 6V9h4V5h-2v2h-4v12a3 3 0 1 0 2 0z"/></svg>Добавить в плейлист</div>
+    ${t.native && Analyzer ? `<div class="opt" id="mAI"><svg viewBox="0 0 24 24"><path d="M9 3h6v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2v2H9v-2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2zm-1 6v6h8V9z"/></svg>${t.ai ? 'Переанализировать AI' : 'Анализировать AI'}</div>` : ''}
     <div class="opt dg" id="mDel"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></svg>Стереть из памяти деки</div>
   `);
   $('#shX').onclick = closeSheet;
   $('#mPlay').onclick = () => { closeSheet(); pick(t.id, 'tracks'); };
-  $('#mNext').onclick = () => { S.queue.splice(S.qpos + 1, 0, t.id); render(); closeSheet(); toast('СЛЕДУЮЩИМ В ОЧЕРЕДИ'); };
-  $('#mQ').onclick = () => { S.queue.push(t.id); render(); closeSheet(); toast('ДОБАВЛЕНО В ОЧЕРЕДЬ'); };
+  $('#mNext').onclick = () => { S.queue.splice(S.qpos + 1, 0, t.id); saveKV(); render(); closeSheet(); toast('СЛЕДУЮЩИМ В ОЧЕРЕДИ'); };
+  $('#mQ').onclick = () => { S.queue.push(t.id); saveKV(); render(); closeSheet(); toast('ДОБАВЛЕНО В ОЧЕРЕДЬ'); };
   $('#mFav').onclick = () => { t.fav = !t.fav; save(t); render(); if(cur() === t) paint(t); closeSheet(); toast(t.fav ? 'В ИЗБРАННОМ' : 'УБРАНО'); };
   $('#mPl').onclick = () => toPlaylist(t);
+  if($('#mAI')) $('#mAI').onclick = async () => { closeSheet(); await analyzeTrack(t, true); };
   $('#mDel').onclick = () => wipeTrack(t);
 }
 const menu = scan;
@@ -2038,7 +1992,7 @@ function toPlaylist(t){
   };
 }
 
-function wipeTrack(t){
+async function wipeTrack(t){
   if(!confirm(`Стереть «${t.title}» из памяти деки? Сам файл на телефоне останется.`)) return;
   S.lib = S.lib.filter(x => x.id !== t.id);
   S.byId.delete(t.id);
@@ -2049,7 +2003,9 @@ function wipeTrack(t){
   else if(qi === S.qpos){ if(S.queue.length) load(Math.min(S.qpos, S.queue.length-1)); else { pause(); S.qpos = -1; $('#mini').classList.add('dead'); } }
   if(t.url) URL.revokeObjectURL(t.url);
   if(t.artURL) URL.revokeObjectURL(t.artURL);
-  DB.del('tracks', t.id); saveKV(); closeSheet(); render(); stats(); toast('СТЁРТО');
+  const stored = await DB.del('tracks', t.id);
+  saveKV(); closeSheet(); render(); stats();
+  toast(stored ? 'СТЁРТО' : 'НЕ УДАЛОСЬ СОХРАНИТЬ УДАЛЕНИЕ');
 }
 
 /* ─── РЕПУТАЦИЯ И ОБЛИК ───────────────────────────────── */
@@ -2088,7 +2044,7 @@ function credUI(){
 }
 
 /* ─── ТАЙМЕР СНА (FLATLINE) ───────────────────────────── */
-let slpT = null;
+let slpT = null, slpEndT = null, slpFadeT = null;
 function sleepUI(){
   $('#sleepOpts').innerHTML = [0,15,30,45,60,90].map(m => `
     <div class="imp ${S.sleep===m?'on':''}" data-m="${m}">
@@ -2100,34 +2056,250 @@ function sleepUI(){
   $('#slpState').textContent = S.sleep ? S.sleep + ' МИН' : 'ВЫКЛ';
 }
 function setSleep(m){
-  clearTimeout(slpT); S.sleep = m; sleepUI();
+  clearTimeout(slpT); clearTimeout(slpEndT); clearInterval(slpFadeT);
+  slpT = slpEndT = slpFadeT = null;
+  if(A.ctx && A.master){
+    const n = A.ctx.currentTime;
+    A.master.gain.cancelScheduledValues(n);
+    A.master.gain.setValueAtTime(S.vol, n);
+  }
+  $('#a2').volume = S.vol;
+  S.sleep = m; sleepUI();
   if(!m) return toast('ТАЙМЕР СНЯТ');
   toast(`FLATLINE ЧЕРЕЗ ${m} МИН`);
   slpT = setTimeout(() => {
+    slpT = null;
     if(A.ctx && A.master){
       const n = A.ctx.currentTime;
       A.master.gain.cancelScheduledValues(n);
       A.master.gain.setValueAtTime(A.master.gain.value, n);
       A.master.gain.linearRampToValueAtTime(0.0001, n + 20);
     }
-    // Эфир идёт мимо мастера — его гасим вручную, иначе Flatline его не заметит
-    const a2 = $('#a2'), v0 = a2.volume, t0 = Date.now();
-    const fade = setInterval(() => {
-      const k = 1 - (Date.now() - t0) / 20000;
-      if(k <= 0){ clearInterval(fade); return; }
-      a2.volume = Math.max(0, v0 * k);
+    const fadeStart = performance.now(), startVol = S.vol;
+    slpFadeT = setInterval(() => {
+      const p = Math.min(1, (performance.now() - fadeStart) / 20000);
+      $('#a2').volume = startVol * (1 - p);
     }, 200);
-    setTimeout(() => { clearInterval(fade); a2.volume = S.vol; }, 20600);
-    setTimeout(() => {
+    slpEndT = setTimeout(() => {
+      clearInterval(slpFadeT); slpFadeT = null; slpEndT = null;
       pause();
       if(A.master) A.master.gain.value = S.vol;
+      $('#a2').volume = S.vol;
       S.sleep = 0; sleepUI(); toast('FLATLINED // ДЕКА УСНУЛА');
       if('Notification' in window && Notification.permission === 'granted'){
         try{ new Notification('N54 // FLATLINED', {body:'Таймер сна отработал. Дека остановлена.'}); }catch(e){}
       }
-    }, 20500);
-  }, m*60000);
+    }, 20000);
+  }, Math.max(0, m*60000 - 20000));
 }
+
+/* ─── NEURAL SORT: ЛОКАЛЬНЫЙ АНАЛИЗ ─────────────────────
+   YAMNet исполняется внутри APK. В очередь уходит один трек за раз: так
+   MediaCodec и TFLite не съедают память на больших библиотеках. Результат
+   кешируется в записи трека; ошибка не кешируется и следующий трек всё равно
+   анализируется. В браузере эта секция честно остаётся недоступной. */
+const AI_VERSION = 1;
+let aiHealth = Analyzer ? 'checking' : 'missing';
+let aiHealthText = '';
+let aiRunState = {running:false, cancel:false, done:0, total:0, failed:0};
+
+const aiNum = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+const ai01 = v => Math.max(0, Math.min(1, aiNum(v)));
+function aiRows(rows, limit){
+  if(!Array.isArray(rows)) return [];
+  return rows.filter(x => x && typeof x.name === 'string' && x.name.trim())
+    .map(x => ({name:x.name.trim().slice(0, 48), score:ai01(x.score)}))
+    .sort((a,b) => b.score - a.score).slice(0, limit);
+}
+function normalizeAI(raw){
+  if(!raw || aiNum(raw.version, -1) !== AI_VERSION) throw new Error('версия ответа AI не поддерживается');
+  const genres = aiRows(raw.genres, 3);
+  const genre = typeof raw.genre === 'string' && raw.genre.trim()
+    ? raw.genre.trim().slice(0, 48) : (genres[0] ? genres[0].name : '');
+  return {
+    version:AI_VERSION,
+    model:typeof raw.model === 'string' && raw.model.trim() ? raw.model.trim().slice(0, 32) : 'YAMNet',
+    offline:raw.offline === true,
+    genre,
+    confidence:ai01(raw.confidence),
+    genres,
+    moods:aiRows(raw.moods, 3),
+    instruments:aiRows(raw.instruments, 4),
+    energy:ai01(raw.energy), voice:ai01(raw.voice), dance:ai01(raw.dance),
+    bpm:Math.max(0, Math.min(300, Math.round(aiNum(raw.bpm)))),
+    seconds:Math.max(0, aiNum(raw.seconds)),
+    analyzedAt:Math.max(0, aiNum(raw.analyzedAt, Date.now()))
+  };
+}
+
+async function checkAnalyzer(force = false){
+  if(!Analyzer){ aiHealth = 'missing'; aiUI(); return false; }
+  if(!force && aiHealth === 'ready') return true;
+  aiHealth = 'checking'; aiUI();
+  try{
+    const s = await Analyzer.status();
+    if(s && s.ready === true && aiNum(s.version, -1) === AI_VERSION){
+      aiHealth = 'ready'; aiHealthText = typeof s.model === 'string' ? s.model : 'YAMNet';
+      aiUI(); return true;
+    }
+    aiHealth = 'error'; aiHealthText = s && typeof s.error === 'string' ? s.error : 'модель не готова';
+  }catch(e){
+    aiHealth = 'error'; aiHealthText = e && e.message ? e.message : 'плагин не ответил';
+    console.error('AudioAnalyzer status:', e);
+  }
+  aiUI(); return false;
+}
+
+async function analyzeTrack(t, announce = false){
+  if(!t || !t.native || !t.uri){
+    if(announce) toast('AI-АНАЛИЗ ДОСТУПЕН ДЛЯ ТРЕКОВ MEDIASTORE В APK');
+    return false;
+  }
+  if(!(await checkAnalyzer())){
+    if(announce) toast('AI-МОДЕЛЬ НЕ ПОДНЯЛАСЬ // СМОТРИ СТАТУС В КИБЕРВЕРЕ');
+    return false;
+  }
+  try{
+    const raw = await Analyzer.analyze({uri:t.uri});
+    t.ai = normalizeAI(raw);
+    const stored = await save(t);
+    if(stored === false) throw new Error('результат не сохранился');
+    if(cur() === t) paint(t);
+    if(announce) toast(t.ai.genre ? `AI: ${t.ai.genre} // ${Math.round(t.ai.confidence*100)}%` : 'AI: ЖАНР НЕ ОПРЕДЕЛЁН');
+    aiUI();
+    return true;
+  }catch(e){
+    console.error('AudioAnalyzer analyze:', t.id, e);
+    if(announce) toast('AI-АНАЛИЗ НЕ УДАЛСЯ // РЕЗУЛЬТАТ НЕ СОХРАНЁН');
+    return false;
+  }
+}
+
+function aiTaste(){
+  const pref = new Map();
+  S.lib.filter(t => t.ai && t.ai.version === AI_VERSION).forEach(t => {
+    const signal = (t.fav ? 4 : 0) + Math.min(20, t.plays || 0) * .35 - Math.min(12, t.skips || 0) * .55;
+    (t.ai.genres || []).forEach(g => pref.set(g.name, (pref.get(g.name) || 0) + signal * (.35 + ai01(g.score))));
+  });
+  return pref;
+}
+function aiForYou(tracks){
+  const pref = aiTaste();
+  return tracks.slice().sort((a,b) => {
+    const score = t => {
+      let n = (t.fav ? 3 : 0) + Math.min(20, t.plays || 0) * .18 - Math.min(12, t.skips || 0) * .5;
+      (t.ai.genres || []).forEach(g => n += (pref.get(g.name) || 0) * (.2 + ai01(g.score)));
+      return n + ai01(t.ai.confidence) * .05;
+    };
+    return score(b) - score(a);
+  });
+}
+function smartMixes(){
+  const tracks = S.lib.filter(t => t.ai && t.ai.version === AI_VERSION);
+  if(!tracks.length) return [];
+  const mixes = [];
+  const add = (name, note, rows) => {
+    const ids = [...new Set(rows.map(t => t.id))];
+    if(ids.length >= 2) mixes.push({name, note, ids});
+  };
+  add('ДЛЯ ТЕБЯ', 'Избранное, дослушивания и пропуски.', aiForYou(tracks));
+  add('ДРАЙВ', 'Высокая энергия или активное настроение.', tracks.filter(t =>
+    t.ai.energy >= .58 || (t.ai.moods || []).some(x => x.name === 'ДРАЙВ'))
+    .sort((a,b) => b.ai.energy - a.ai.energy));
+  add('ТИХИЙ РЕЖИМ', 'Спокойные и менее энергичные треки.', tracks.filter(t =>
+    t.ai.energy <= .42 || (t.ai.moods || []).some(x => x.name === 'СПОКОЙСТВИЕ' || x.name === 'СОН'))
+    .sort((a,b) => a.ai.energy - b.ai.energy));
+  add('ИНСТРУМЕНТАЛ', 'Модель почти не слышит голос.', tracks.filter(t => t.ai.voice <= .16)
+    .sort((a,b) => a.ai.voice - b.ai.voice));
+
+  const genres = new Map();
+  tracks.forEach(t => {
+    const g = t.ai.genre;
+    if(!g) return;
+    if(!genres.has(g)) genres.set(g, []);
+    genres.get(g).push(t);
+  });
+  [...genres.entries()].sort((a,b) => b[1].length - a[1].length).slice(0, 4)
+    .forEach(([g, rows]) => add(g, `AI-жанр · ${rows.length} тр.`, rows.sort((a,b) => b.ai.confidence - a.ai.confidence)));
+  return mixes;
+}
+
+function playAIMix(ids){
+  if(!ids.length) return;
+  if(S.mode === 'radio') offAir();
+  setQueue(ids, ids[0]);
+  now.classList.add('up'); armBack();
+}
+function aiUI(){
+  const state = $('#aiState'), info = $('#aiInfo'), button = $('#aiRun'), fill = $('#aiFill'), root = $('#aiMixes');
+  if(!state || !info || !button || !fill || !root) return;
+  const eligible = S.lib.filter(t => t.native && t.uri);
+  const done = eligible.filter(t => t.ai && t.ai.version === AI_VERSION).length;
+  const pending = eligible.length - done;
+  $('#aiCount').textContent = `${done}/${eligible.length} ТРЕКОВ`;
+
+  if(aiRunState.running){
+    const p = aiRunState.total ? aiRunState.done / aiRunState.total : 0;
+    state.textContent = `${aiRunState.done}/${aiRunState.total}`;
+    info.textContent = `Анализ по одному треку · ошибок ${aiRunState.failed}. Нажми «СТОП», чтобы остановить после текущего.`;
+    button.textContent = aiRunState.cancel ? 'ОСТАНОВКА...' : 'СТОП';
+    button.disabled = aiRunState.cancel;
+    fill.style.width = Math.round(p*100) + '%';
+  }else if(!NATIVE){
+    state.textContent = 'ТОЛЬКО APK';
+    info.textContent = 'В браузере нет доступа к MediaCodec и локальной модели. Анализ работает внутри APK; аудио не отправляется в сеть.';
+    button.textContent = 'НЕДОСТУПНО'; button.disabled = true; fill.style.width = '0%';
+  }else if(aiHealth === 'checking'){
+    state.textContent = 'ПРОВЕРКА...'; info.textContent = 'Проверяю нативный плагин и файл модели YAMNet.';
+    button.textContent = 'ПОДОЖДИ'; button.disabled = true;
+  }else if(aiHealth !== 'ready'){
+    state.textContent = 'ОШИБКА';
+    info.textContent = `Локальная модель не готова${aiHealthText ? ': ' + aiHealthText : '.'}`;
+    button.textContent = 'ПОВТОРИТЬ'; button.disabled = false; fill.style.width = '0%';
+  }else if(!eligible.length){
+    state.textContent = 'НЕТ ТРЕКОВ'; info.textContent = 'Сначала запусти «СКАНИРОВАТЬ ТЕЛЕФОН». AI работает с content:// из MediaStore.';
+    button.textContent = 'АНАЛИЗ'; button.disabled = true; fill.style.width = '0%';
+  }else{
+    state.textContent = pending ? `${pending} В ОЧЕРЕДИ` : 'ГОТОВО';
+    info.textContent = pending
+      ? `${aiHealthText || 'YAMNet'} анализирует 12 секунд из середины каждого трека. Всё остаётся на телефоне.`
+      : 'Библиотека разобрана. Переанализировать отдельный трек можно через долгое нажатие.';
+    button.textContent = pending ? 'АНАЛИЗ' : 'ГОТОВО'; button.disabled = !pending;
+    fill.style.width = eligible.length ? Math.round(done/eligible.length*100) + '%' : '0%';
+  }
+
+  const mixes = smartMixes();
+  root.innerHTML = mixes.length ? mixes.map((m,i) => `<div class="imp" data-ai="${i}">
+    <div class="ix">${m.ids.length} ТР.</div><div class="in">${esc(m.name)}</div><div class="ic">${esc(m.note)}</div></div>`).join('')
+    : `<div class="mono" style="grid-column:1/-1;padding:4px 2px 12px;color:var(--faint);font-size:9px;line-height:1.7">ПОДБОРКИ ПОЯВЯТСЯ, КОГДА AI РАЗБЕРЁТ ХОТЯ БЫ ДВА ТРЕКА.</div>`;
+  root.querySelectorAll('[data-ai]').forEach(el => el.onclick = () => playAIMix(mixes[+el.dataset.ai].ids));
+}
+
+async function runAI(){
+  if(aiRunState.running){ aiRunState.cancel = true; aiUI(); return; }
+  if(aiHealth !== 'ready' && !(await checkAnalyzer(true))) return toast('AI-МОДЕЛЬ НЕ ГОТОВА');
+  const pending = S.lib.filter(t => t.native && t.uri && (!t.ai || t.ai.version !== AI_VERSION));
+  if(!pending.length) return toast('ВСЕ ТРЕКИ УЖЕ ПРОАНАЛИЗИРОВАНЫ');
+  aiRunState = {running:true, cancel:false, done:0, total:pending.length, failed:0};
+  aiUI();
+  for(const t of pending){
+    if(aiRunState.cancel) break;
+    const ok = await analyzeTrack(t, false);
+    aiRunState.done++;
+    if(!ok) aiRunState.failed++;
+    aiUI();
+  }
+  const stopped = aiRunState.cancel, failed = aiRunState.failed, done = aiRunState.done;
+  aiRunState = {running:false, cancel:false, done:0, total:0, failed:0};
+  render(); aiUI();
+  if(stopped) toast(`AI ОСТАНОВЛЕН // ОБРАБОТАНО ${done}`);
+  else if(failed) toast(`AI ГОТОВ // СБОЕВ ${failed}, ИХ МОЖНО ПОВТОРИТЬ`);
+  else toast('AI-РАЗБОР БИБЛИОТЕКИ ГОТОВ');
+}
+$('#aiRun').onclick = runAI;
 
 /* ─── ЭКВАЛАЙЗЕР-ИМПЛАНТ ──────────────────────────────── */
 function eqUI(){
@@ -2208,6 +2380,13 @@ function eqUI(){
     applyEQ(); eqUI(); saveKV(); toast('ИМПЛАНТ УСТАНОВЛЕН: ' + n);
   });
 }
+$('#netSw').onclick = () => {
+  S.net = !S.net;
+  $('#netSw').classList.toggle('on', S.net);
+  if(!S.net) hunting = false;
+  saveKV(); permUI();
+  toast(S.net ? 'ПОИСК ОБЛОЖЕК РАЗРЕШЁН' : 'ПОИСК ОБЛОЖЕК ВЫКЛЮЧЕН');
+};
 $('#eqSw').onclick = () => { S.eq.on = !S.eq.on; applyEQ(); eqUI(); saveKV(); };
 $('#cmpSw').onclick = e => { S.fx.cmp = !S.fx.cmp; e.currentTarget.classList.toggle('on', S.fx.cmp); applyFX(); saveKV(); };
 $('#widSw').onclick = e => { S.fx.wide = !S.fx.wide; e.currentTarget.classList.toggle('on', S.fx.wide); applyFX(); saveKV(); };
@@ -2239,88 +2418,89 @@ function anLevel(){
 
 async function permUI(){
   const q = navigator.storage?.estimate ? await navigator.storage.estimate().catch(() => null) : null;
-  const persisted = navigator.storage?.persisted ? await navigator.storage.persisted().catch(() => false) : false;
+  let persisted = null;
+  if(navigator.storage?.persisted){ try{ persisted = await navigator.storage.persisted(); }catch(e){ console.warn('storage persisted:', e); } }
   const canPersist = !!navigator.storage?.persist;
+  const codecs = codecReport();
+  const okC = codecs.filter(c => c.ok).map(c => c.e.toUpperCase());
+  const noC = codecs.filter(c => !c.ok).map(c => c.e.toUpperCase());
 
-  /* Правило: строка либо даёт кнопку, которую человек нажмёт, либо сообщает факт,
-     который ему нужен. Всё остальное было моей отладкой и отсюда убрано:
-     список из 23 кодеков, частота дискретизации, пик анализатора, проверка
-     File System Access. Это не его дело — это моё. */
+  /* Правило экрана: строка либо что-то делает, либо сообщает факт.
+     Строк «НЕТ API, ничего не поделаешь» больше нет — они здесь не нужны.
+     Поэтому список для APK и для браузера разный: это разные миры. */
   const rows = [];
 
   if(NATIVE){
-    const a = await Scanner.checkAccess().catch(() => ({granted:false}));
-    const n = await Scanner.notifyAccess().catch(() => ({granted:false}));
+    let a = null, n = null, scanError = null, notifyError = null;
+    if(Scanner){
+      try{ a = await Scanner.checkAccess(); }catch(e){ scanError = e; }
+      try{ n = await Scanner.notifyAccess(); }catch(e){ notifyError = e; }
+    }
 
-    rows.push({ t:'Вся музыка телефона', st: a.granted ? ['ok','ДОСТУП ЕСТЬ'] : ['mid','НЕ ЗАПРОШЕН'],
-      d:'Кнопка «СКАНИРОВАТЬ ТЕЛЕФОН» внизу заберёт всё разом, из любых папок. Файлы не копируются — в памяти только метаданные.' });
+    rows.push({ t:'Вся музыка телефона',
+      st: !Scanner || scanError ? ['no','ПЛАГИН НЕ ОТВЕЧАЕТ'] : a.granted ? ['ok','ДОСТУП ЕСТЬ'] : ['mid','НЕ ЗАПРОШЕН'],
+      d: !Scanner || scanError ? 'MusicScanner не ответил. Сканирование MediaStore в этой сборке недоступно.' : a.granted
+        ? 'Кнопка «СКАНИРОВАТЬ ТЕЛЕФОН» внизу заберёт всё. Папки выбирать не нужно: Android уже обошёл телефон и карту памяти, дека читает его готовый индекс целиком. Файлы не копируются. Слепое пятно одно: папки с .nomedia система не индексирует вообще.'
+        : 'Жми «СКАНИРОВАТЬ ТЕЛЕФОН» внизу — Android спросит разрешение, и дека заберёт всю музыку разом, из любых папок.',
+      ask: null });
 
+    const mediaBroken = !MS || !Scanner || !n || msHealth === 'error' || notifyError;
     rows.push({ t:'Шторка и экран блокировки',
-      st: !MS ? ['no','ПЛАГИН НЕ ОТВЕЧАЕТ'] : n.granted ? ['ok','РАБОТАЕТ'] : ['mid','НУЖНО РАЗРЕШЕНИЕ'],
-      d: !MS ? 'Плагин media-session не поднялся. Сборка прошла cap sync?'
-        : n.granted ? 'Обложка и кнопки в шторке, музыка не глохнет под блокировкой.'
-        : 'Без разрешения Android молча выбрасывает уведомление — шторки не будет.',
-      ask: (MS && !n.granted) ? 'РАЗРЕШИТЬ' : null,
+      st: mediaBroken ? ['no','ПЛАГИН НЕ ОТВЕЧАЕТ'] : !n.granted ? ['mid','НУЖНО РАЗРЕШЕНИЕ']
+        : msHealth === 'ok' ? ['ok','РАБОТАЕТ'] : ['mid','ГОТОВ К ПРОВЕРКЕ'],
+      d: mediaBroken ? 'Media Session или проверка уведомлений не ответили. Шторка в этой сессии не подтверждена.'
+        : !n.granted ? 'Android 13+ без разрешения молча выбрасывает уведомление — шторки не будет.'
+        : msHealth === 'ok' ? 'Нативный вызов прошёл: метаданные и состояние воспроизведения передаются в Media Session.'
+        : 'Плагин зарегистрирован и разрешение есть. Фактический ответ появится после первого запуска трека.',
+      ask: (!mediaBroken && !n.granted) ? 'РАЗРЕШИТЬ' : null,
       act: async () => { askedNotify = false; await ensureNotify(); permUI(); } });
+
   }else{
     rows.push({ t:'Вся музыка телефона', st:['no','НЕ В БРАУЗЕРЕ'],
-      d:'Браузеру не дают сплошной доступ к файлам — такого API нет. Тут только выбор папки кнопкой внизу. Целиком читает музыку APK-сборка.' });
+      d:'Сплошной доступ к файлам браузеру не дают — такого API нет и запроса не будет. Тут только выбор папки кнопкой ниже. Целиком читает музыку APK-сборка.' });
+
+    if('mediaSession' in navigator)
+      rows.push({ t:'Шторка и экран блокировки', st:['ok','API ЕСТЬ'],
+        d:'Браузер объявил Media Session API. Метаданные и обработчики проверяются при первом запуске трека; отдельное разрешение не требуется.' });
+
+    if('showDirectoryPicker' in window)
+      rows.push({ t:'Проверка выбора папки', st:['ok','API ОБЪЯВЛЕН'],
+        d:'Кнопка проверяет, разрешает ли оболочка открыть системный выбор папки. Дека не сохраняет выданный handle и не обещает доступ без повторного выбора.',
+        ask:'ПРОВЕРИТЬ', act: async () => {
+          try{ await window.showDirectoryPicker(); toast('РАБОТАЕТ // ПАПКА ОТДАНА'); }
+          catch(e){ toast(e?.name === 'AbortError' ? 'ОТМЕНА // НО МЕТОД ЖИВОЙ' : 'ОБЪЯВЛЕН, НО НЕ РАБОТАЕТ'); }
+        } });
   }
 
+  // Общее для обоих миров
   if(canPersist)
-    rows.push({ t:'Память деки закреплена', st: persisted ? ['ok','ДА'] : ['mid','НЕТ'],
-      d: persisted ? 'Система не сотрёт библиотеку при нехватке места.'
-        : (NATIVE ? 'Android может вытеснить память деки — придётся сканировать заново.'
-                  : 'Android может вытеснить память деки и стереть все треки.'),
-      ask: persisted ? null : 'ЗАКРЕПИТЬ',
+    rows.push({ t:'Память деки закреплена', st: persisted === true ? ['ok','ДА'] : persisted === false ? ['mid','НЕТ'] : ['no','НЕ ПРОВЕРЕНО'],
+      d: persisted === true ? 'Система не сотрёт библиотеку при нехватке места.'
+        : persisted === null ? 'Браузер не ответил на проверку закрепления. Кнопка ниже выполнит реальный запрос.'
+        : (NATIVE ? 'Здесь хранятся только метаданные, но и их Android может вытеснить — придётся пересканировать.'
+                  : 'Без него Android может вытеснить память деки и стереть все треки.'),
+      ask: persisted === true ? null : 'ЗАКРЕПИТЬ',
       act: async () => { toast(await navigator.storage.persist().catch(() => false) ? 'ПАМЯТЬ ЗАКРЕПЛЕНА' : 'ОТКАЗАНО // СИСТЕМА РЕШАЕТ САМА'); permUI(); } });
 
   if(q)
     rows.push({ t:'Занято на диске', st:['ok', Math.round((q.usage/q.quota)*100) + '%'],
-      d: `${mb(q.usage||0)} из ${mb(q.quota||0)}.` + (NATIVE ? ' Только метаданные — файлы остаются там, где лежали.' : ' Треки скопированы в память деки целиком.') });
+      d: `${mb(q.usage||0)} из ${mb(q.quota||0)}.` + (NATIVE ? ' Только метаданные — сами файлы остаются там, где лежали.' : ' Треки скопированы в память деки целиком.') });
 
-  /* Одна строка вместо тумблера и строки. У каждого состояния — ровно одно
-     очевидное действие, поэтому отдельный переключатель не нужен. */
+  rows.push({ t:'Звуковой тракт', st: A.error ? ['no','ОШИБКА'] : A.ctx ? (A.ctx.state === 'running' ? ['ok','ЖИВОЙ'] : ['mid', A.ctx.state.toUpperCase()]) : ['mid','НЕ ЗАПУЩЕН'],
+    d: A.error ? 'Аудиограф не собрался: обычное воспроизведение может остаться, но EQ, эффекты и визуализатор недоступны.'
+      : A.ctx ? `${A.ctx.sampleRate} Гц · ${A.eq.length} полос EQ · компрессор ${S.fx.cmp?'вкл':'выкл'} · стерео ${S.fx.wide?'вкл':'выкл'} · сигнал ${anLevel()}`
+             : 'Запустится при первом касании — этого требует Android.' });
+
   const gaps = coverGaps().length;
-  rows.push({ t:'Обложки из сети',
-    st: !S.net ? ['mid','ВЫКЛЮЧЕНО'] : hunting ? ['ok','ИЩЕТ'] : gaps ? ['mid', gaps + ' БЕЗ ОБЛОЖКИ'] : ['ok','ВСЁ НА МЕСТЕ'],
+  rows.push({ t:'Обложки из сети', st: !S.net ? ['mid','ВЫКЛЮЧЕНО'] : hunting ? ['ok','ИЩЕТ...'] : gaps ? ['mid', gaps + ' БЕЗ ОБЛОЖКИ'] : ['ok','ВСЁ НА МЕСТЕ'],
     d: !S.net
-      ? 'Сейчас дека показывает только обложки, вшитые в сами файлы. Разрешишь — найдёт недостающие в открытой базе MusicBrainz. Наружу уйдут только артист и альбом, файлы — никогда.'
-      : hunting ? 'Ищем. Можно закрыть экран, поиск не прервётся.'
-      : gaps ? `${gaps} альбомов без обложки. База отвечает не быстрее раза в секунду, поэтому не мгновенно.`
-      : 'Всё, что нашлось, — нашлось. Остального в базе просто нет.',
-    ask: !S.net ? 'РАЗРЕШИТЬ' : hunting ? 'ОСТАНОВИТЬ' : gaps ? `НАЙТИ (${gaps})` : 'ЗАПРЕТИТЬ',
-    act: () => {
-      if(hunting){ hunting = false; toast('ПОИСК ОСТАНОВЛЕН'); permUI(); return; }
-      if(!S.net){ S.net = true; saveKV(); hunt(); return; }
-      if(gaps) return hunt();
-      S.net = false; saveKV(); permUI(); toast('ПОИСК ОБЛОЖЕК ВЫКЛЮЧЕН');
-    } });
+      ? 'Выключено. Дека покажет только те обложки, что вшиты в сами файлы. Включи тумблером ниже — и она сможет искать недостающие в открытой базе MusicBrainz.'
+      : `Ищем в MusicBrainz и Cover Art Archive — открытая база, ключей не просит. Наружу уходят только имя артиста и название альбома, сами файлы никуда не отправляются. Ищем по альбому, не по треку: ${gaps} запросов вместо ${S.lib.filter(t => !t.art && !(t.native && t.artUri)).length}. Лимит базы — 1 запрос в секунду, поэтому не быстро.`,
+    ask: !S.net ? null : hunting ? 'ОСТАНОВИТЬ' : (gaps ? `НАЙТИ (${gaps})` : null),
+    act: () => { if(hunting){ hunting = false; toast('ПОИСК ОСТАНОВЛЕН'); } else hunt(); } });
 
-  const noGenre = S.lib.filter(t => !t.genre && t.artist !== 'НЕИЗВЕСТНЫЙ').length;
-  const withGenre = S.lib.filter(t => t.genre).length;
-  rows.push({ t:'Умный разбор жанров',
-    st: !AI.key ? ['mid','НЕТ КЛЮЧА'] : brain ? ['ok','ДУМАЕТ'] : noGenre ? ['mid', noGenre + ' БЕЗ ЖАНРА'] : ['ok', withGenre + ' РАЗОБРАНО'],
-    d: !AI.key
-      ? 'Артиста дека уже достаёт из имени файла — это бесплатно и офлайн. А жанр по артисту определит Claude: MusicBrainz русский рэп знает плохо, модель знает. Нужен твой ключ с console.anthropic.com. Он ляжет только на это устройство, наружу уйдут имя артиста и название — файлы никогда. Разбор всей библиотеки стоит центы.'
-      : brain ? 'Определяем жанры пачками по 60. Можно закрыть экран.'
-      : noGenre ? `${noGenre} треков без жанра. Разберём и разложим по плейлистам — по одному на жанр.`
-      : `Жанр есть у ${withGenre}. Можно разложить по плейлистам заново, если добавились треки.`,
-    ask: !AI.key ? 'ВВЕСТИ КЛЮЧ' : brain ? 'ОСТАНОВИТЬ' : noGenre ? `РАЗОБРАТЬ (${noGenre})` : withGenre ? 'РАЗЛОЖИТЬ' : 'УБРАТЬ КЛЮЧ',
-    act: async () => {
-      if(brain){ brain = false; toast('ОСТАНОВЛЕНО'); permUI(); return; }
-      if(!AI.key){
-        const k = prompt('Ключ Anthropic API (sk-ant-...)\nЛяжет только на это устройство. Пусто — убрать.', '');
-        if(k === null) return;
-        AI.key = k.trim();
-        await DB.put('kv', AI.key, 'aikey');
-        permUI(); toast(AI.key ? 'КЛЮЧ СОХРАНЁН' : 'КЛЮЧ УБРАН');
-        return;
-      }
-      if(noGenre){ await think(); shelve(); return; }
-      if(withGenre) return shelve();
-      AI.key = ''; await DB.del('kv', 'aikey'); permUI(); toast('КЛЮЧ УБРАН');
-    } });
+  rows.push({ t:'Форматы', st:['ok', okC.length + '/' + codecs.length],
+    d:'Играет: ' + okC.join(', ') + (noC.length ? '. Не играет: ' + noC.join(', ') + ' — такие файлы сканер пропустит и скажет об этом.' : '.') });
 
   $('#permBody').innerHTML = rows.map((r,i) => `
     <div class="perm">
@@ -2342,7 +2522,9 @@ $('#wipeBtn').onclick = async () => {
   clearTimeout(kvT); kvT = null;         // A4: иначе долг по saveKV перезапишет cfg после очистки
   PQ.q.length = 0;
   hunting = false;
-  pause(); await DB.clear('tracks'); await DB.clear('kv'); await DB.clear('covers');
+  pause();
+  const cleared = await DB.clearAll(['tracks','kv','covers']);
+  if(!cleared) return toast('ОЧИСТКА НЕ ЗАВЕРШЕНА // ПАМЯТЬ ВЕРНУЛА ОШИБКУ');
   location.reload();
 };
 
@@ -2471,7 +2653,7 @@ async function catchWave(st){
   const url = st.tag
     ? `${RB}/bytagexact/${encodeURIComponent(st.tag)}?limit=40&hidebroken=true&order=votes&reverse=true`
     : `${RB}/topvote/40?hidebroken=true`;
-  const r = await fetch(url, {headers:{Accept:'application/json'}});
+  const r = await fetchTimed(url, {headers:{Accept:'application/json'}});
   if(!r.ok) throw new Error('rb ' + r.status);
   const list = await r.json();
   // Плейлисты и HLS браузерный <audio> не тянет — отсеиваем сразу
@@ -2497,9 +2679,12 @@ function statik(ms = 500){
   src.start(); src.stop(t1 + .05);
 }
 
+let tuneTicket = 0, radioTicket = 0, radioFailedTicket = 0, radioFails = 0, radioLive = false;
+
 function offAir(){
+  tuneTicket++; radioTicket++; radioLive = false; radioFails = 0;
   S.mode = 'deck'; S.station = null; S.stList = []; S.stIdx = 0;
-  const a2 = $('#a2'); a2.pause(); a2.removeAttribute('src'); a2.load();
+  const a2 = $('#a2'); a2.onerror = a2.onended = null; a2.pause(); a2.removeAttribute('src'); a2.load();
   $('#nowLbl').textContent = 'ВОСПРОИЗВЕДЕНИЕ';
   radioUI(); saveKV();
 }
@@ -2507,7 +2692,7 @@ function offAir(){
 function paintRadio(x){
   const st = STATIONS.find(v => v.f === S.station);
   if(!x || !st) return;
-  $('#ne').textContent = `📻 ${st.f} FM · ${st.n} · ЖИВОЙ ЭФИР`;
+  $('#ne').textContent = `📻 ${st.f} FM · ${st.n} · ${radioLive ? 'ЖИВОЙ ЭФИР' : 'ПОДКЛЮЧЕНИЕ'}`;
   $('#nt').textContent = (x.name || '').trim() || 'БЕЗ ИМЕНИ';
   $('#na').textContent = [x.country, (x.codec||'').toUpperCase(), x.bitrate ? x.bitrate + ' кбит/с' : '']
     .filter(Boolean).join('  ·  ') || 'ЭФИР';
@@ -2519,22 +2704,41 @@ function paintRadio(x){
   else { bg.classList.remove('on'); ma.removeAttribute('src'); ma.style.visibility = 'hidden'; }
   $('#nowFav').classList.remove('on');
   $('#lyr').textContent = ''; $('#lyrBtn').classList.remove('has'); $('#lyr').classList.remove('on');
-  // favicon — обычный http-адрес. Плагину его давать нельзя, поэтому гоним
-  // через тот же artData: заберём сами, если CORS позволит, иначе без картинки.
   session({title:(x.name||'').trim() || st.n, artist:st.f + ' FM · ' + st.n,
-           album:'РАДИО НАЙТ-СИТИ', art:null, native:false, artUri:null,
-           _art:x.favicon || null});
+           album:'РАДИО НАЙТ-СИТИ', art:null, native:false, artUri:null});
   glitch();
 }
 
-function hop(d){
+function radioStreamFailed(ticket){
+  if(ticket !== radioTicket || ticket === radioFailedTicket || S.mode !== 'radio') return;
+  radioFailedTicket = ticket;
+  if(++radioFails >= S.stList.length){
+    statik(260); offAir(); toast('ЭФИР НЕ ПОДНЯЛСЯ // ЖИВЫХ ПОТОКОВ НЕТ');
+    return;
+  }
+  toast('СТАНЦИЯ НЕ ОТВЕЧАЕТ // ИЩУ ДАЛЬШЕ');
+  hop(1, true);
+}
+function radioPlayRejected(e, ticket = radioTicket){
+  if(ticket !== radioTicket || S.mode !== 'radio') return;
+  radioLive = false; radioUI();
+  if(e && e.name === 'NotAllowedError') return toast('ЭФИР ГОТОВ // НАЖМИ PLAY');
+  radioStreamFailed(ticket);
+}
+
+function hop(d, failed = false){
   if(!S.stList.length) return;
+  if(!failed) radioFails = 0;
   S.stIdx = (S.stIdx + d + S.stList.length) % S.stList.length;
   const x = S.stList[S.stIdx], a2 = $('#a2');
+  const ticket = ++radioTicket;
+  radioLive = false;
   statik(220);
+  a2.onerror = () => radioStreamFailed(ticket);
+  a2.onended = () => radioStreamFailed(ticket);
   a2.src = x.url_resolved;
   a2.volume = S.vol;
-  a2.play().catch(() => {});
+  a2.play().catch(e => radioPlayRejected(e, ticket));
   paintRadio(x); radioUI();
   toast(`${S.stIdx+1}/${S.stList.length} · ${(x.name||'').trim().slice(0,26)}`);
 }
@@ -2544,6 +2748,7 @@ async function tune(st){
   if(S.station === st.f){ statik(260); offAir(); return toast('ЭФИР ВЫКЛЮЧЕН'); }
   if(navigator.onLine === false) return toast('НЕТ СЕТИ // ЭФИР НЕДОСТУПЕН');
 
+  const ticket = ++tuneTicket;
   statik();
   A.decks.forEach(dk => dk.el.pause());        // дека замолкает, эфир занимает выход
   S.mode = 'radio'; S.station = st.f; S.stList = []; S.stIdx = 0;
@@ -2551,7 +2756,7 @@ async function tune(st){
   toast('НАСТРОЙКА НА ' + st.f + '...');
   try{ S.stList = await catchWave(st); }
   catch(e){ statik(260); offAir(); return toast('КАТАЛОГ НЕ ОТВЕЧАЕТ'); }
-  if(S.station !== st.f) return;               // пока ловили, успели переключиться
+  if(ticket !== tuneTicket || S.station !== st.f) return; // устаревший ответ не перезапишет новую частоту
   if(!S.stList.length){ statik(260); offAir(); return toast('ПОМЕХИ // НА ЭТОЙ ЧАСТОТЕ ПУСТО'); }
 
   S.stIdx = -1;
@@ -2570,8 +2775,27 @@ async function tune(st){
    Мост берём напрямую у Capacitor: JS-обёртку плагина из npm не подключить,
    у деки нет сборщика. Натив регистрируется сам при cap sync, а прокси к нему
    даёт сам бридж — тем же способом, которым уже работает MusicScanner. */
-const MS = NATIVE ? reg('MediaSession') : null;
-const WEBMS = !MS && ('mediaSession' in navigator);
+const MS = reg('MediaSession');
+const WEBMS = !NATIVE && ('mediaSession' in navigator);
+let msHealth = MS ? 'unknown' : 'missing', msWarned = false;
+
+function msFault(where, e){
+  msHealth = 'error';
+  console.error('MediaSession ' + where + ':', e);
+  if(!msWarned){ msWarned = true; toast('MEDIA SESSION НЕ ОТВЕЧАЕТ // ШТОРКА НЕДОСТУПНА'); }
+  if(S.view === 'sys') permUI();
+}
+function msCall(method, ...args){
+  if(!MS) return null;
+  try{
+    const p = MS[method](...args);
+    if(p && typeof p.then === 'function'){
+      p.then(() => { if(method !== 'setActionHandler'){ msHealth = 'ok'; if(S.view === 'sys') permUI(); } })
+       .catch(e => msFault(method, e));
+    }else if(method !== 'setActionHandler') msHealth = 'ok';
+    return p;
+  }catch(e){ msFault(method, e); return null; }
+}
 
 const ACTS = {
   play: () => play(),
@@ -2584,8 +2808,6 @@ const ACTS = {
   seekto:       d => { if(d && d.seekTime != null) au().currentTime = d.seekTime; }
 };
 
-const msTry = (fn) => { try{ const r = fn(); if(r && r.catch) r.catch(() => {}); }catch(e){} };
-
 let msWired = false;
 function wireSession(){
   if(msWired) return;
@@ -2593,82 +2815,60 @@ function wireSession(){
   // Плагин требует явных обработчиков: без них кнопки в шторке не появятся.
   // Браузер для <audio> доводит play/pause сам, но лишним не будет.
   Object.entries(ACTS).forEach(([a, fn]) => {
-    if(MS) msTry(() => MS.setActionHandler({action:a}, d => fn(d || {})));
-    else if(WEBMS){ try{ navigator.mediaSession.setActionHandler(a, fn); }catch(e){} }
+    if(MS) msCall('setActionHandler', {action:a}, d => fn(d || {}));
+    else if(WEBMS){ try{ navigator.mediaSession.setActionHandler(a, fn); }catch(e){ console.warn('MediaSession action:', a, e); } }
   });
 }
 
-/* Плагину можно отдавать ТОЛЬКО data:-ссылки.
-   Его urlToBitmap() на всё, что начинается с "http", лезет в сеть через
-   HttpURLConnection прямо из метода плагина. А адрес обложки натива —
-   https://localhost/_capacitor_content_/... — существует только внутри
-   вебвью: Capacitor перехватывает такие запросы, настоящего сервера нет.
-   Из Java соединение отклоняется → IOException → мост делает
-   throw new RuntimeException на своём потоке → приложение убито.
-   Вылетало на каждой песне.
-
-   Изнутри вебвью тот же адрес читается нормально. Поэтому забираем байты
-   сами и кладём их в вызов base64 — эту ветку плагин обрабатывает без сети. */
-const MAXART = 900 * 1024;          // больше через мост тащить незачем
-const artCache = new Map();         // ключ обложки → data:-ссылка или null
-
-async function artData(t){
-  const u = t._art || artURL(t);
-  if(!u) return null;
-  if(u.startsWith('data:')) return u;
-  const k = ckey(t) + '|' + u;
-  if(artCache.has(k)) return artCache.get(k);
-  let out = null;
-  try{
-    const r = await fetch(u);
-    if(r.ok){
-      const b = await r.blob();
-      if(b.size && b.size <= MAXART){
-        out = await new Promise(res => {
-          const fr = new FileReader();
-          fr.onload = () => res(typeof fr.result === 'string' ? fr.result : null);
-          fr.onerror = () => res(null);
-          fr.readAsDataURL(b);
-        });
-      }
-    }
-  }catch(e){ out = null; }          // не достали — просто без обложки, но живые
-  if(artCache.size > 60) artCache.clear();
-  artCache.set(k, out);
-  return out;
+let sessionSeq = 0;
+const asDataURL = blob => new Promise((res,rej) => {
+  const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob);
+});
+async function nativeArtwork(src){
+  if(!src) return null;
+  const r = await fetchTimed(src);
+  if(!r.ok) throw new Error('artwork ' + r.status);
+  return asDataURL(await r.blob());
 }
 
-async function session(t){
+function session(t){
   if(!MS && !WEBMS) return;
   wireSession();
-  const meta = {title:t.title, artist:t.artist, album:t.album || 'N54 AUDIO DECK', artwork:[]};
-
-  if(!MS){
-    // Браузеру ссылку отдать можно: он грузит её сам и в своём процессе
-    const a = artURL(t);
-    if(a) meta.artwork = [{src:a, sizes:'512x512', type:(t.art && t.art.type) || 'image/jpeg'}];
-    try{ navigator.mediaSession.metadata = new MediaMetadata(meta); }catch(e){}
-    return;
+  const a = artURL(t);
+  // t.art есть только у файлов из папки. У натива обложка — ссылка без блоба,
+  // поэтому type больше не читаем из t.art: раньше тут падало на каждом треке APK.
+  const art = a ? [{src:a, sizes:'512x512', type:(t.art && t.art.type) || 'image/jpeg'}] : [];
+  const base = {title:t.title, artist:t.artist, album:t.album || 'N54 AUDIO DECK'};
+  if(MS){
+    const seq = ++sessionSeq;
+    (async () => {
+      let nativeArt = [];
+      if(a){
+        try{ nativeArt = [{src:await nativeArtwork(a), sizes:'512x512', type:(t.art && t.art.type) || 'image/jpeg'}]; }
+        catch(e){ console.warn('MediaSession artwork:', e); }
+      }
+      if(seq === sessionSeq) msCall('setMetadata', Object.assign({}, base, {artwork:nativeArt}));
+    })();
+  }else{
+    try{ navigator.mediaSession.metadata = new MediaMetadata(Object.assign({}, base, {artwork:art})); }
+    catch(e){
+      console.warn('MediaSession metadata artwork:', e);
+      try{ navigator.mediaSession.metadata = new MediaMetadata(Object.assign({}, base, {artwork:[]})); }
+      catch(e2){ console.error('MediaSession metadata:', e2); }
+    }
   }
-
-  msTry(() => MS.setMetadata(meta));          // сначала текст, чтобы шторка не ждала картинку
-  const d = await artData(t);
-  if(!d) return;
-  if(cur() !== t && S.mode !== 'radio') return;   // пока кодировали, трек сменился
-  meta.artwork = [{src:d, sizes:'512x512', type:'image/jpeg'}];
-  msTry(() => MS.setMetadata(meta));
 }
 
 function msState(st){
-  if(MS) msTry(() => MS.setPlaybackState({playbackState:st}));
-  else if(WEBMS) navigator.mediaSession.playbackState = st;
+  if(MS) msCall('setPlaybackState', {playbackState:st});
+  else if(WEBMS){ try{ navigator.mediaSession.playbackState = st; }catch(e){ console.warn('MediaSession state:', e); } }
 }
 
 setInterval(() => {
   const el = au();
   if(!el.duration || !isFinite(el.duration)) return;
   const p = {duration:el.duration, playbackRate:el.playbackRate, position:Math.min(el.currentTime, el.duration)};
-  if(MS) msTry(() => MS.setPositionState(p));
+  if(MS) msCall('setPositionState', p);
   else if(WEBMS && navigator.mediaSession.setPositionState){
     try{ navigator.mediaSession.setPositionState(p); }catch(e){}
   }
@@ -2678,7 +2878,7 @@ setInterval(() => {
    Спрашиваем один раз — при первом запуске воспроизведения. */
 let askedNotify = false;
 async function ensureNotify(){
-  if(askedNotify || !Scanner) return;
+  if(askedNotify || !Scanner || !MS) return;
   askedNotify = true;
   try{
     const st = await Scanner.notifyAccess();
@@ -2686,7 +2886,11 @@ async function ensureNotify(){
       const r = await Scanner.requestNotify();
       if(!r.granted) toast('БЕЗ УВЕДОМЛЕНИЙ ШТОРКА НЕ ПОКАЖЕТСЯ');
     }
-  }catch(e){}
+  }catch(e){
+    askedNotify = false;
+    console.error('notification permission:', e);
+    toast('НЕ УДАЛОСЬ ПРОВЕРИТЬ УВЕДОМЛЕНИЯ');
+  }
 }
 
 /* ─── BREACH PROTOCOL (загрузка) ──────────────────────── */
@@ -2745,12 +2949,13 @@ async function restore(){
     if(cfg.eq) S.eq = {on:!!cfg.eq.on, gains:(cfg.eq.gains||S.eq.gains).slice(), preset:cfg.eq.preset||'FLAT'};
     if(cfg.fx) S.fx = {cmp:!!cfg.fx.cmp, wide:!!cfg.fx.wide, xf:cfg.fx.xf||0};
   }
-  AI.key = (await DB.get('kv', 'aikey')) || '';   // ключ отдельно от cfg и никогда в git
   const rows = await DB.all('tracks');
   rows.sort((a,b) => a.added - b.added).forEach(r => {
     if(!r.file && !r.native) return;
     if(r.native && !NATIVE) return;      // натив-запись открыли в браузере — играть нечем
-    const t = Object.assign({}, r, {url:null, artURL:null});
+    const t = Object.assign({name:'', size:0, type:'audio/*', title:'БЕЗ НАЗВАНИЯ', artist:'НЕИЗВЕСТНЫЙ',
+      album:'БЕЗ АЛЬБОМА', year:'', genre:'', no:'', dur:0, lyrics:'', plays:0, skips:0,
+      fav:false, ai:null, added:Date.now(), folder:''}, r, {url:null, artURL:null});
     S.lib.push(t); S.byId.set(t.id, t);
   });
   // Поднимаем кеш обложек: 40 записей, дёшево
@@ -2759,20 +2964,13 @@ async function restore(){
       const keys = await new Promise(r => { const q = DB.tx('covers','readonly').getAllKeys(); q.onsuccess = () => r(q.result||[]); q.onerror = () => r([]); });
       const vals = await new Promise(r => { const q = DB.tx('covers','readonly').getAll(); q.onsuccess = () => r(q.result||[]); q.onerror = () => r([]); });
       keys.forEach((k,i) => S.covers.set(k, vals[i] ? URL.createObjectURL(vals[i]) : null));
-    }catch(e){}
+    }catch(e){ storageFault(e); }
   }
-  // Разбор имён для уже загруженных: у Drew 207 треков с «НЕИЗВЕСТНЫЙ»,
-  // хотя артист написан в имени файла. Разовая починка, только пустые места.
-  const fixed = S.lib.filter(t => guess(t));
-  if(fixed.length){
-    await DB.putMany('tracks', fixed.map(rec));       // одной транзакцией, а не 740
-    setTimeout(() => toast(`АРТИСТ ВОССТАНОВЛЕН У ${fixed.length} ТРЕКОВ`), 2600);
-  }
-
   document.documentElement.dataset.corp = S.corp;
   $('#shuf').classList.toggle('on', S.shuffle);
   $('#rep').classList.toggle('on', S.repeat !== 'off');
   $('#rep').textContent = S.repeat === 'one' ? 'REP·1' : 'REP';
+  $('#netSw').classList.toggle('on', S.net);
   $('#cmpSw').classList.toggle('on', S.fx.cmp);
   $('#widSw').classList.toggle('on', S.fx.wide);
   $('#xf').value = S.fx.xf; $('#xfV').textContent = S.fx.xf + ' с';
@@ -2789,7 +2987,8 @@ async function restore(){
       if(t){ paint(t); session(t); au().src = url(t);
              $('#tt').textContent = t.dur ? fmt(t.dur) : '0:00'; }
     }
-  } else { S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); }
+  }
+  if(!S.queue.length){ S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); S.qpos = -1; }
 }
 
 /* ─── АППАРАТНАЯ «НАЗАД» ──────────────────────────────────
@@ -2808,18 +3007,30 @@ function layers(){
   if(S.view !== 'radio')                        L.push(() => $$('#nav button')[0].click());
   return L;
 }
-let guarded = false;
+let guarded = false, handlingBack = false, releasingBack = false;
 function armBack(){
-  if(guarded || !layers().length) return;
+  if(guarded || handlingBack || releasingBack || !layers().length) return;
   guarded = true;
   history.pushState({n54:1}, '');
 }
+function releaseBack(){
+  if(!guarded || handlingBack || releasingBack) return;
+  guarded = false; releasingBack = true;
+  history.back();
+}
 addEventListener('popstate', () => {
   guarded = false;
+  if(releasingBack){
+    releasingBack = false;
+    if(layers().length) armBack();
+    return;
+  }
   const L = layers();
-  if(!L.length) return;          // нечего закрывать — следующее «назад» выйдет, и это правильно
+  if(!L.length) return;
+  handlingBack = true;
   L[0]();
-  armBack();                     // слои ещё остались — снова подставляем буфер
+  handlingBack = false;
+  if(layers().length) armBack();
 });
 
 /* ─── ГОРЯЧИЕ КЛАВИШИ ─────────────────────────────────── */
@@ -2828,7 +3039,11 @@ addEventListener('keydown', e => {
   if(e.code === 'Space'){ e.preventDefault(); toggle(); }
   if(e.code === 'ArrowRight') step(1);
   if(e.code === 'ArrowLeft') step(-1);
-  if(e.code === 'Escape') { closeSheet(); now.classList.remove('up'); }
+  if(e.code === 'Escape') {
+    const hadSheet = sheet.classList.contains('on');
+    closeSheet();
+    if(now.classList.contains('up')){ now.classList.remove('up'); if(!hadSheet) releaseBack(); }
+  }
 });
 ['click','touchstart','keydown'].forEach(ev => addEventListener(ev, () => { wire(); resume(); setTimeout(permUI, 300); }, {once:true, passive:true}));
 
@@ -2839,7 +3054,8 @@ addEventListener('keydown', e => {
   await restore();
   $('#dirBtn').textContent = SCAN_LABEL();
   $('#impBtn').classList.toggle('hidden', NATIVE);   // в APK выбирать файлы поштучно незачем
-  credUI(); eqUI(); sleepUI(); stats(); topUI(); permUI(); render(); sizeCv(); frame();
+  credUI(); eqUI(); sleepUI(); stats(); topUI(); permUI(); render(); aiUI(); sizeCv(); frame();
+  checkAnalyzer();
   await breach();
   if(!S.lib.length) toast(DB.ok ? 'ПАМЯТЬ ПУСТА // ЗАГРУЗИ ТРЕКИ' : 'ХРАНИЛИЩЕ НЕДОСТУПНО // РЕЖИМ СЕССИИ');
   else toast(`ПАМЯТЬ: ${S.lib.length} ТРЕКОВ`);

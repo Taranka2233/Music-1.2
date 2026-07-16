@@ -32,6 +32,9 @@ jobs:
       - name: Рантайм Capacitor в www/
         run: node scripts/copy-runtime.mjs
 
+      - name: Локальная модель YAMNet (с проверкой SHA-256)
+        run: node scripts/fetch-yamnet.mjs
+
       # android/ не в репозитории — генерируем на каждой сборке
       - name: Создать проект Android
         run: npx cap add android
