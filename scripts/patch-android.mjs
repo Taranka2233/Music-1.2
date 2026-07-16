@@ -78,8 +78,10 @@ if (!existsSync('www/capacitor.js')) {
   console.error('    cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor.js');
   process.exit(1);
 }
-if (!readFileSync('www/capacitor.js', 'utf8').includes('registerPlugin')) {
-  console.error('  ✗ www/capacitor.js есть, но registerPlugin в нём не найден.');
+const runtime = readFileSync('www/capacitor.js', 'utf8');
+const runtimeMiss = ['registerPlugin', 'isNativePlatform', 'convertFileSrc'].filter(x => !runtime.includes(x));
+if (runtimeMiss.length) {
+  console.error('  ✗ www/capacitor.js неполный: ' + runtimeMiss.join(', '));
   process.exit(1);
 }
 ok('рантайм Capacitor на месте');

@@ -35,6 +35,20 @@ import com.getcapacitor.annotation.PermissionCallback;
 )
 public class MusicScannerPlugin extends Plugin {
 
+    private static String stringAt(Cursor c, int index, String fallback) {
+        if (index < 0 || c.isNull(index)) return fallback;
+        String value = c.getString(index);
+        return value == null ? fallback : value;
+    }
+
+    private static long longAt(Cursor c, int index) {
+        return index < 0 || c.isNull(index) ? 0L : c.getLong(index);
+    }
+
+    private static int intAt(Cursor c, int index) {
+        return index < 0 || c.isNull(index) ? 0 : c.getInt(index);
+    }
+
     private String alias() {
         return Build.VERSION.SDK_INT >= 33 ? "audio13" : "audioOld";
     }
@@ -137,30 +151,30 @@ public class MusicScannerPlugin extends Plugin {
         try (Cursor c = getContext().getContentResolver().query(col, proj, null, null, sort)) {
             if (c == null) { call.reject("MediaStore вернул null", "QUERY_NULL"); return; }
 
-            int iId  = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
-            int iTit = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
-            int iArt = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST);
-            int iAlb = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM);
-            int iAId = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID);
-            int iDur = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION);
-            int iSiz = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
-            int iMim = c.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
-            int iYr  = c.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR);
-            int iTrk = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK);
-            int iNam = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
-            // getColumnIndex, а не OrThrow: на старых прошивках колонки просто нет
+            int iId  = c.getColumnIndex(MediaStore.Audio.Media._ID);
+            int iTit = c.getColumnIndex(MediaStore.Audio.Media.TITLE);
+            int iArt = c.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+            int iAlb = c.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+            int iAId = c.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID);
+            int iDur = c.getColumnIndex(MediaStore.Audio.Media.DURATION);
+            int iSiz = c.getColumnIndex(MediaStore.Audio.Media.SIZE);
+            int iMim = c.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE);
+            int iYr  = c.getColumnIndex(MediaStore.Audio.Media.YEAR);
+            int iTrk = c.getColumnIndex(MediaStore.Audio.Media.TRACK);
+            int iNam = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
             int iGen = hasGenre ? c.getColumnIndex(MediaStore.Audio.Media.GENRE) : -1;
             int iMus = c.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC);
             int iDir = c.getColumnIndex(hasRel ? MediaStore.Audio.Media.RELATIVE_PATH
                                                : MediaStore.Audio.Media.DATA);
+            if (iId < 0) { call.reject("MediaStore не вернул _ID", "MISSING_ID"); return; }
 
             while (c.moveToNext()) {
-                if (!includeAll && iMus >= 0 && c.getInt(iMus) == 0) { skipped++; continue; }
+                if (!includeAll && iMus >= 0 && intAt(c, iMus) == 0) { skipped++; continue; }
 
-                long id  = c.getLong(iId);
-                long aid = c.getLong(iAId);
+                long id  = longAt(c, iId);
+                long aid = longAt(c, iAId);
 
-                String dir = iDir >= 0 ? c.getString(iDir) : null;
+                String dir = stringAt(c, iDir, null);
                 if (dir != null && !hasRel) {                 // из DATA берём каталог
                     int cut = dir.lastIndexOf('/');
                     dir = cut > 0 ? dir.substring(0, cut) : dir;
@@ -170,8 +184,8 @@ public class MusicScannerPlugin extends Plugin {
                 JSObject o = new JSObject();
                 o.put("id",     String.valueOf(id));
                 o.put("uri",    ContentUris.withAppendedId(col, id).toString());
-                Boolean has = artOk.get(aid);
-                if (has == null) {
+                Boolean has = aid > 0 ? artOk.get(aid) : Boolean.FALSE;
+                if (has == null && aid > 0) {
                     try (java.io.InputStream in = getContext().getContentResolver()
                             .openInputStream(ContentUris.withAppendedId(artBase, aid))) {
                         has = in != null;
@@ -179,17 +193,18 @@ public class MusicScannerPlugin extends Plugin {
                     artOk.put(aid, has);
                 }
                 o.put("artUri", has ? ContentUris.withAppendedId(artBase, aid).toString() : "");
-                o.put("title",  c.getString(iTit));
-                o.put("artist", c.getString(iArt));
-                o.put("album",  c.getString(iAlb));
-                o.put("dur",    c.getLong(iDur) / 1000.0);
-                o.put("size",   c.getLong(iSiz));
-                o.put("mime",   c.getString(iMim));
-                o.put("year",   c.getInt(iYr));
-                o.put("no",     c.getInt(iTrk) % 1000);   // 1005 = диск 1, трек 5
-                o.put("name",   c.getString(iNam));
+                String name = stringAt(c, iNam, "");
+                o.put("title",  stringAt(c, iTit, name.isEmpty() ? "БЕЗ НАЗВАНИЯ" : name));
+                o.put("artist", stringAt(c, iArt, ""));
+                o.put("album",  stringAt(c, iAlb, ""));
+                o.put("dur",    longAt(c, iDur) / 1000.0);
+                o.put("size",   longAt(c, iSiz));
+                o.put("mime",   stringAt(c, iMim, ""));
+                o.put("year",   intAt(c, iYr));
+                o.put("no",     intAt(c, iTrk) % 1000);   // 1005 = диск 1, трек 5
+                o.put("name",   name);
                 o.put("folder", dir == null ? "" : dir);
-                String g = iGen >= 0 ? c.getString(iGen) : null;
+                String g = stringAt(c, iGen, null);
                 o.put("genre",  g == null ? "" : g);
                 out.put(o);
             }

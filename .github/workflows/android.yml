@@ -30,9 +30,7 @@ jobs:
       # Android впрыскивает только native-bridge.js. registerPlugin живёт
       # в пакете @capacitor/core — без него плагины не поднимутся вообще.
       - name: Рантайм Capacitor в www/
-        run: |
-          cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor.js
-          grep -q registerPlugin www/capacitor.js
+        run: node scripts/copy-runtime.mjs
 
       # android/ не в репозитории — генерируем на каждой сборке
       - name: Создать проект Android

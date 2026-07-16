@@ -72,6 +72,7 @@ npm run serve          # http://localhost:5173
 
 ```bash
 npm ci
+npm run runtime                         # положить @capacitor/core в www/
 npx cap add android                     # папки android/ в репозитории нет
 npx @capacitor/assets generate --android # иконки и сплэш из assets/
 node scripts/patch-android.mjs          # плагин + разрешения
@@ -167,8 +168,9 @@ Android усыпляет процесс, несмотря на foreground servic
 ```
 .
 ├── www/
-│   ├── index.html              вся дека, ~105 КБ
-│   └── manifest.webmanifest
+│   ├── index.html              вся дека, ~154 КБ
+│   ├── manifest.webmanifest
+│   └── vendor/jsmediatags.js   локальный разбор ID3/MP4/FLAC-тегов
 ├── assets/                     исходники иконки и сплэша
 │   ├── icon.png
 │   ├── icon-foreground.png
@@ -177,6 +179,7 @@ Android усыпляет процесс, несмотря на foreground servic
 ├── native/
 │   └── MusicScannerPlugin.java плагин MediaStore
 ├── scripts/
+│   ├── copy-runtime.mjs        кладёт @capacitor/core в www/
 │   └── patch-android.mjs       накатывает натив на android/
 ├── .github/workflows/
 │   ├── android.yml             сборка APK

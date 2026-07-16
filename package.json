@@ -4,8 +4,9 @@
   "private": true,
   "description": "Матовая киберпанк-дека: локальный аудиоплеер на одном HTML-файле",
   "scripts": {
-    "add:android": "cap add android && node scripts/patch-android.mjs",
-    "sync": "node scripts/patch-android.mjs && cap sync android",
+    "runtime": "node scripts/copy-runtime.mjs",
+    "add:android": "npm run runtime && cap add android && capacitor-assets generate --android && node scripts/patch-android.mjs && cap sync android",
+    "sync": "npm run runtime && node scripts/patch-android.mjs && cap sync android",
     "apk": "cd android && ./gradlew assembleDebug",
     "serve": "npx --yes serve www -l 5173",
     "assets": "capacitor-assets generate --android"
@@ -13,10 +14,11 @@
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/core": "^6.2.0",
-    "@jofr/capacitor-media-session": "^4.0.0"
+    "@jofr/capacitor-media-session": "^4.0.0",
+    "jsmediatags": "^3.9.5"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.2.0",
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0"
   }
 }
