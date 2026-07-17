@@ -12,8 +12,8 @@
     "apk": "cd android && ./gradlew assembleDebug",
     "serve": "npm run build:web && npx --yes serve dist -l 5173",
     "assets": "capacitor-assets generate --android",
-    "check:source": "node scripts/check-app.mjs && node scripts/media3-stage3-check.mjs",
-    "test:behavior": "node scripts/behavior-tests.mjs && node scripts/media3-stage3-behavior.mjs",
+    "check:source": "node scripts/check-app.mjs && node scripts/media3-stage3-check.mjs && node scripts/media3-stage3-behavior.mjs",
+    "test:behavior": "node scripts/behavior-tests.mjs",
     "check": "npm run check:source && npm run test:behavior && npm run build:web"
   },
   "dependencies": {
