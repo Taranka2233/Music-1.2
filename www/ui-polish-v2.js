@@ -27,14 +27,21 @@ function stats(){
  if(cards.length!==3||cards[0].parentElement?.classList.contains('n54-stat-grid'))return;
  const grid=document.createElement('div');grid.className='n54-stat-grid';cards[0].before(grid);cards.forEach(card=>{card.classList.add('n54-stat');grid.append(card)});
 }
+function media3(){
+ const host=$('#permBody'),api=window.N54_MEDIA3;if(!host||!api?.available||host.querySelector('#media3Diag'))return;
+ const card=document.createElement('div');card.className='slot';card.id='media3Diag';
+ const info=document.createElement('div');info.style.flex='1';const title=document.createElement('div');title.className='sl';title.textContent='Media3 // теневой тест';const desc=document.createElement('div');desc.className='sd';desc.textContent='ПРОВЕРЯЕТ ОЧЕРЕДЬ БЕЗ ПЕРЕКЛЮЧЕНИЯ ЗВУКА';info.append(title,desc);
+ const button=document.createElement('button');button.className='btn';button.textContent='ПРОВЕРИТЬ';button.onclick=async()=>{button.disabled=true;try{const r=await api.validateQueue();desc.textContent=`ПРИНЯТО ${r.accepted||0} · ОТКЛОНЕНО ${r.rejected||0}`;window.toast?.('MEDIA3: ОЧЕРЕДЬ ПРОВЕРЕНА')}catch(e){desc.textContent='ОШИБКА: '+String(e?.message||e)}finally{button.disabled=false}};
+ card.append(info,button);host.append(card);
+}
 function labels(){
  const shuf=$('#shuf'),rep=$('#rep');if(shuf?.textContent==='SHUF')shuf.textContent='СЛУЧ';if(rep?.textContent==='REP')rep.textContent='ПОВТ';else if(rep?.textContent==='REP·1')rep.textContent='ПОВТ·1';
  const radio=$('#radioBody');if(!radio)return;radio.querySelectorAll('.mono').forEach(el=>{if((el.textContent||'').includes('ЭКВАЛАЙЗЕР И ВИЗУАЛИЗАТОР'))el.textContent='ЭКВАЛАЙЗЕР НА ЭФИР НЕ ВЛИЯЕТ: ПОТОК ИДЁТ НАПРЯМУЮ В ПЛЕЕР И НЕ ПРОХОДИТ ЧЕРЕЗ ЛОКАЛЬНЫЙ АУДИОПРОЦЕССОР.'});
 }
 function titleSize(){const title=$('#nt');if(!title)return;const n=(title.textContent||'').trim().length;title.classList.toggle('n54-long',n>27&&n<=46);title.classList.toggle('n54-xlong',n>46)}
 function observe(selector,callback){const node=$(selector);if(node)new MutationObserver(callback).observe(node,{subtree:true,childList:true,characterData:true})}
-function run(){playlists();stats();labels();titleSize()}
-observe('#plBody',playlists);observe('#topBody',stats);observe('#radioBody',labels);observe('#nt',titleSize);observe('#shuf',labels);observe('#rep',labels);
-document.addEventListener('click',e=>{if(e.target.closest?.('#nav,#libTabs,#plBody'))setTimeout(run,40)},true);
+function run(){playlists();stats();labels();titleSize();media3()}
+observe('#plBody',playlists);observe('#topBody',stats);observe('#radioBody',labels);observe('#nt',titleSize);observe('#shuf',labels);observe('#rep',labels);observe('#permBody',media3);
+document.addEventListener('n54:media3-ready',media3);document.addEventListener('click',e=>{if(e.target.closest?.('#nav,#libTabs,#plBody'))setTimeout(run,40)},true);
 addEventListener('load',run,{once:true});if(document.readyState!=='loading')run();
 })();
