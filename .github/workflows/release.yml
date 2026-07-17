@@ -1,4 +1,4 @@
-name: Signed Release APK
+name: Signed Release APK and AAB
 
 on:
   workflow_dispatch:
@@ -41,26 +41,32 @@ jobs:
           node scripts/patch-android-v2.mjs
           npx cap sync android
 
-      - name: Собрать unsigned release
+      - name: Собрать unsigned APK и AAB
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease bundleRelease --no-daemon
 
       - name: Проверить unsigned bundle
         run: |
           set -euo pipefail
-          SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
-          test -f "$SRC"
-          EMBEDDED_SHA=$(unzip -p "$SRC" assets/public/index.html | sha256sum | cut -d' ' -f1)
+          APK_SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          AAB_SRC=android/app/build/outputs/bundle/release/app-release.aab
+          test -f "$APK_SRC"
+          test -f "$AAB_SRC"
           DIST_SHA=$(sha256sum dist/index.html | cut -d' ' -f1)
-          test "$EMBEDDED_SHA" = "$DIST_SHA"
-          unzip -Z1 "$SRC" | grep -q 'assets/public/build-manifest.json'
-          unzip -Z1 "$SRC" | grep -q 'assets/public/widget-bridge-v2.js'
-          ! unzip -p "$SRC" assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
-          ! unzip -p "$SRC" assets/public/index.html | grep -q 'function frame()'
+          APK_SHA=$(unzip -p "$APK_SRC" assets/public/index.html | sha256sum | cut -d' ' -f1)
+          AAB_SHA=$(unzip -p "$AAB_SRC" base/assets/public/index.html | sha256sum | cut -d' ' -f1)
+          test "$APK_SHA" = "$DIST_SHA"
+          test "$AAB_SHA" = "$DIST_SHA"
+          unzip -Z1 "$APK_SRC" | grep -q 'assets/public/build-manifest.json'
+          unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/build-manifest.json'
+          unzip -Z1 "$APK_SRC" | grep -q 'assets/public/widget-bridge-v2.js'
+          unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/widget-bridge-v2.js'
+          ! unzip -p "$APK_SRC" assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
+          ! unzip -p "$AAB_SRC" base/assets/public/index.html | grep -q 'function frame()'
 
-      - name: Выравнять и подписать release
+      - name: Выравнять и подписать release APK и AAB
         env:
           N54_KEYSTORE_BASE64: ${{ secrets.N54_KEYSTORE_BASE64 }}
           N54_KEYSTORE_PASSWORD: ${{ secrets.N54_KEYSTORE_PASSWORD }}
@@ -77,27 +83,39 @@ jobs:
           trap 'rm -f "$KEYSTORE" "$ALIGNED"' EXIT
           printf '%s' "$N54_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
-          SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
-          VERSION_NAME=$(apkanalyzer manifest version-name "$SRC")
-          VERSION_CODE=$(apkanalyzer manifest version-code "$SRC")
-          OUT="N54-Audio-Deck-${VERSION_NAME}-${VERSION_CODE}-release.apk"
+
+          APK_SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          AAB_SRC=android/app/build/outputs/bundle/release/app-release.aab
+          VERSION_NAME=$(apkanalyzer manifest version-name "$APK_SRC")
+          VERSION_CODE=$(apkanalyzer manifest version-code "$APK_SRC")
+          APK_OUT="N54-Audio-Deck-${VERSION_NAME}-${VERSION_CODE}-release.apk"
+          AAB_OUT="N54-Audio-Deck-${VERSION_NAME}-${VERSION_CODE}-release.aab"
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
-          "$BUILD_TOOLS/zipalign" -f -P 16 4 "$SRC" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$N54_KEY_ALIAS" --ks-pass env:N54_KEYSTORE_PASSWORD --key-pass env:N54_KEY_PASSWORD --out "$OUT" "$ALIGNED"
-          rm -f "$OUT.idsig"
-          "$BUILD_TOOLS/zipalign" -c -P 16 4 "$OUT"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$OUT" | tee release-verification.log
-          unzip -t "$OUT" >> release-verification.log
+
+          "$BUILD_TOOLS/zipalign" -f -P 16 4 "$APK_SRC" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$N54_KEY_ALIAS" --ks-pass env:N54_KEYSTORE_PASSWORD --key-pass env:N54_KEY_PASSWORD --out "$APK_OUT" "$ALIGNED"
+          rm -f "$APK_OUT.idsig"
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 "$APK_OUT"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK_OUT" | tee release-apk-verification.log
+          unzip -t "$APK_OUT" >> release-apk-verification.log
+
+          cp "$AAB_SRC" "$AAB_OUT"
+          jarsigner -keystore "$KEYSTORE" -storepass:env N54_KEYSTORE_PASSWORD -keypass:env N54_KEY_PASSWORD "$AAB_OUT" "$N54_KEY_ALIAS"
+          jarsigner -verify -verbose -certs "$AAB_OUT" | tee release-aab-verification.log
+          unzip -t "$AAB_OUT" >> release-aab-verification.log
+
           printf '%s\n' "$VERSION_CODE" | tee release-version-code.txt
           printf '%s\n' "$VERSION_NAME" | tee release-version-name.txt
-          sha256sum "$OUT" | tee release-sha256.txt
+          sha256sum "$APK_OUT" "$AAB_OUT" | tee release-sha256.txt
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: n54-audio-deck-signed-release
           path: |
             N54-Audio-Deck-*-release.apk
-            release-verification.log
+            N54-Audio-Deck-*-release.aab
+            release-apk-verification.log
+            release-aab-verification.log
             release-version-code.txt
             release-version-name.txt
             release-sha256.txt
