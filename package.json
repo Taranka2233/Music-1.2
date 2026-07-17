@@ -6,7 +6,7 @@
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
     "model": "node scripts/fetch-yamnet.mjs",
-    "capacitor:sync:before": "npm run build:web && node scripts/android-toolchain.mjs && node scripts/extra-native.mjs && node scripts/version-android.mjs && node scripts/media3-private-pilot.mjs",
+    "capacitor:sync:before": "npm run build:web && node scripts/android-toolchain.mjs && node scripts/extra-native.mjs && node scripts/version-android.mjs && node scripts/media3-private-pilot-v2.mjs",
     "add:android": "npm run model && npm run build:web && cap add android && capacitor-assets generate --android && node scripts/patch-android-v2.mjs && cap sync android",
     "sync": "npm run model && npm run build:web && node scripts/patch-android-v2.mjs && cap sync android",
     "apk": "cd android && ./gradlew assembleDebug",
