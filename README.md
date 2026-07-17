@@ -62,14 +62,29 @@ Workflow `Signed Release APK and AAB` запускается вручную по
 
 Workflow `AAB Audit` без секретов собирает unsigned `bundleRelease` и проверяет `base/assets/public/index.html` по тому же SHA-256.
 
+## Media3 — этап 3
+
+В APK уже компилируются Media3 1.10.1, `ExoPlayer`, `N54PlaybackService` и `N54Media3Plugin`. Сервис объявлен как `MediaSessionService` с foreground service type `mediaPlayback`.
+
+Миграция пока работает в теневом режиме:
+
+- HTML Audio остаётся единственным активным звуковым движком;
+- кнопка в разделе «Система» вызывает только `validateQueue()`;
+- проверка не загружает очередь в ExoPlayer и не переключает звук;
+- реальный `setQueue()` доступен только после feature flag `n54_media3_enabled`;
+- CI проверяет, что shadow validation не вызывает активацию.
+
+Следующий шаг — тест URI очереди на физическом Android, затем подготовка очереди в ExoPlayer без воспроизведения и только после этого controlled cutover.
+
 ## Нативный слой
 
 - `MusicScannerPlugin` — MediaStore и разрешения;
 - `AudioAnalyzerPlugin` — MediaPipe/YAMNet;
 - `OutputGuardPlugin` — пауза при отключении аудиовыхода;
-- `HomeWidgetPlugin`, `N54WidgetProvider`, `N54CommandBridge2` — адресный виджет.
+- `HomeWidgetPlugin`, `N54WidgetProvider`, `N54CommandBridge2` — адресный виджет;
+- `N54PlaybackService`, `N54Media3Plugin` — staged Media3 playback owner и контроллер.
 
-Конфликтующий ручной AudioGuard удалён. До миграции на Media3 аудиофокусом управляет штатный WebView.
+Конфликтующий ручной AudioGuard удалён. До полного cutover текущим воспроизведением управляет штатный WebView.
 
 ## Ограничения
 
