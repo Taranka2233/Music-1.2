@@ -29,6 +29,9 @@ jobs:
           cmp -s www/index.html dist/index.html
           test -f dist/capacitor.js
           test -f dist/build-manifest.json
+          test -f dist/media3-bridge-v3.js
+          test ! -f dist/media3-bridge.js
+          test ! -f dist/media3-bridge-v2.js
           git diff --exit-code -- www package.json package-lock.json capacitor.config.json
 
       - name: Локальная модель YAMNet
@@ -59,10 +62,14 @@ jobs:
           AAB_SHA=$(unzip -p "$AAB_SRC" base/assets/public/index.html | sha256sum | cut -d' ' -f1)
           test "$APK_SHA" = "$DIST_SHA"
           test "$AAB_SHA" = "$DIST_SHA"
-          unzip -Z1 "$APK_SRC" | grep -q 'assets/public/build-manifest.json'
-          unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/build-manifest.json'
-          unzip -Z1 "$APK_SRC" | grep -q 'assets/public/widget-bridge-v2.js'
-          unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/widget-bridge-v2.js'
+          for FILE in build-manifest.json widget-bridge-v2.js media3-bridge-v3.js; do
+            unzip -Z1 "$APK_SRC" | grep -q "assets/public/$FILE"
+            unzip -Z1 "$AAB_SRC" | grep -q "base/assets/public/$FILE"
+          done
+          ! unzip -Z1 "$APK_SRC" | grep -q 'assets/public/media3-bridge.js'
+          ! unzip -Z1 "$APK_SRC" | grep -q 'assets/public/media3-bridge-v2.js'
+          ! unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/media3-bridge.js'
+          ! unzip -Z1 "$AAB_SRC" | grep -q 'base/assets/public/media3-bridge-v2.js'
           ! unzip -p "$APK_SRC" assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
           ! unzip -p "$AAB_SRC" base/assets/public/index.html | grep -q 'function frame()'
 
