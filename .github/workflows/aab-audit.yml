@@ -31,6 +31,9 @@ jobs:
         run: |
           npm ci
           npm run check
+          test -f dist/media3-bridge-v3.js
+          test ! -f dist/media3-bridge.js
+          test ! -f dist/media3-bridge-v2.js
           cmp -s www/index.html dist/index.html
           git diff --exit-code -- www package.json package-lock.json capacitor.config.json
 
@@ -59,9 +62,11 @@ jobs:
           SOURCE_SHA=$(sha256sum www/index.html | cut -d' ' -f1)
           test "$EMBEDDED_SHA" = "$DIST_SHA"
           test "$DIST_SHA" = "$SOURCE_SHA"
-          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js; do
+          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js media3-bridge-v3.js; do
             unzip -Z1 "$AAB" | grep -q "base/assets/public/$FILE"
           done
+          ! unzip -Z1 "$AAB" | grep -q 'base/assets/public/media3-bridge.js'
+          ! unzip -Z1 "$AAB" | grep -q 'base/assets/public/media3-bridge-v2.js'
           ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
           ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'function frame()'
           ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'id="viz"'
