@@ -19,6 +19,15 @@ public final class N54PlaybackService extends MediaSessionService {
     private ExoPlayer player;
     private MediaSession mediaSession;
 
+    private final MediaSession.Callback sessionCallback = new MediaSession.Callback() {
+        @Override
+        public MediaSession.ConnectionResult onConnect(
+                MediaSession session, MediaSession.ControllerInfo controller) {
+            if (!controller.isTrusted()) return MediaSession.ConnectionResult.reject();
+            return MediaSession.Callback.super.onConnect(session, controller);
+        }
+    };
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -30,7 +39,9 @@ public final class N54PlaybackService extends MediaSessionService {
                 .setAudioAttributes(audioAttributes, true)
                 .build();
         player.setHandleAudioBecomingNoisy(true);
-        mediaSession = new MediaSession.Builder(this, player).build();
+        mediaSession = new MediaSession.Builder(this, player)
+                .setCallback(sessionCallback)
+                .build();
     }
 
     @Nullable
