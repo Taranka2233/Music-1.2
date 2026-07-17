@@ -34,6 +34,13 @@ public final class N54Media3Plugin extends Plugin {
     private ListenableFuture<MediaController> controllerFuture;
     private MediaController controller;
 
+    private static final class QueueBuild {
+        final List<MediaItem> items = new ArrayList<>();
+        int inputCount;
+        int rejected;
+        int targetIndex;
+    }
+
     private final Player.Listener listener = new Player.Listener() {
         @Override
         public void onEvents(Player player, Player.Events events) {
@@ -102,6 +109,29 @@ public final class N54Media3Plugin extends Plugin {
     }
 
     @PluginMethod
+    public void validateQueue(PluginCall call) {
+        JSArray input = call.getArray("items");
+        if (input == null || input.length() == 0) {
+            call.reject("Media3 queue is empty");
+            return;
+        }
+        try {
+            QueueBuild queue = buildQueue(input, call.getInt("index", 0));
+            JSObject out = new JSObject();
+            out.put("input", queue.inputCount);
+            out.put("accepted", queue.items.size());
+            out.put("rejected", queue.rejected);
+            out.put("index", queue.items.isEmpty() ? -1 : queue.targetIndex);
+            out.put("mediaId", queue.items.isEmpty() ? ""
+                    : queue.items.get(queue.targetIndex).mediaId);
+            out.put("playbackStarted", false);
+            call.resolve(out);
+        } catch (Exception error) {
+            call.reject("Invalid Media3 queue", error);
+        }
+    }
+
+    @PluginMethod
     public void setQueue(PluginCall call) {
         if (!requireController(call)) return;
         JSArray input = call.getArray("items");
@@ -110,33 +140,14 @@ public final class N54Media3Plugin extends Plugin {
             return;
         }
         try {
-            List<MediaItem> items = new ArrayList<>();
-            for (int i = 0; i < input.length(); i++) {
-                JSONObject row = input.getJSONObject(i);
-                String uriValue = row.optString("uri", "");
-                Uri mediaUri = normalizeUri(uriValue);
-                if (mediaUri == null) continue;
-                String id = row.optString("id", uriValue);
-                MediaMetadata.Builder metadata = new MediaMetadata.Builder()
-                        .setTitle(row.optString("title", "Без названия"))
-                        .setArtist(row.optString("artist", "Неизвестный"))
-                        .setAlbumTitle(row.optString("album", "N54 Audio Deck"));
-                Uri artworkUri = normalizeUri(row.optString("artworkUri", ""));
-                if (artworkUri != null) metadata.setArtworkUri(artworkUri);
-                items.add(new MediaItem.Builder()
-                        .setMediaId(id)
-                        .setUri(mediaUri)
-                        .setMediaMetadata(metadata.build())
-                        .build());
-            }
-            if (items.isEmpty()) {
+            QueueBuild queue = buildQueue(input, call.getInt("index", 0));
+            if (queue.items.isEmpty()) {
                 call.reject("Media3 queue has no native playable URI");
                 return;
             }
-            int index = Math.max(0, Math.min(items.size() - 1, call.getInt("index", 0)));
             long positionMs = Math.max(0L, Math.round(call.getDouble("position", 0.0) * 1000.0));
             boolean play = call.getBoolean("play", false);
-            controller.setMediaItems(items, index, positionMs);
+            controller.setMediaItems(queue.items, queue.targetIndex, positionMs);
             controller.prepare();
             controller.setPlayWhenReady(play);
             call.resolve(state());
@@ -192,6 +203,47 @@ public final class N54Media3Plugin extends Plugin {
         float volume = (float) Math.max(0.0, Math.min(1.0, call.getDouble("volume", 1.0)));
         controller.setVolume(volume);
         call.resolve(state());
+    }
+
+    private QueueBuild buildQueue(JSArray input, int requestedIndex) throws Exception {
+        QueueBuild queue = new QueueBuild();
+        queue.inputCount = input.length();
+        int safeRequested = Math.max(0, Math.min(input.length() - 1, requestedIndex));
+        int acceptedBeforeTarget = 0;
+        String requestedId = input.getJSONObject(safeRequested).optString("id", "");
+        boolean targetFound = false;
+
+        for (int i = 0; i < input.length(); i++) {
+            JSONObject row = input.getJSONObject(i);
+            String uriValue = row.optString("uri", "");
+            Uri mediaUri = normalizeUri(uriValue);
+            if (mediaUri == null) {
+                queue.rejected++;
+                continue;
+            }
+            String id = row.optString("id", uriValue);
+            if (i < safeRequested) acceptedBeforeTarget++;
+            MediaMetadata.Builder metadata = new MediaMetadata.Builder()
+                    .setTitle(row.optString("title", "Без названия"))
+                    .setArtist(row.optString("artist", "Неизвестный"))
+                    .setAlbumTitle(row.optString("album", "N54 Audio Deck"));
+            Uri artworkUri = normalizeUri(row.optString("artworkUri", ""));
+            if (artworkUri != null) metadata.setArtworkUri(artworkUri);
+            queue.items.add(new MediaItem.Builder()
+                    .setMediaId(id)
+                    .setUri(mediaUri)
+                    .setMediaMetadata(metadata.build())
+                    .build());
+            if (!targetFound && !requestedId.isEmpty() && requestedId.equals(id)) {
+                queue.targetIndex = queue.items.size() - 1;
+                targetFound = true;
+            }
+        }
+        if (!queue.items.isEmpty() && !targetFound) {
+            queue.targetIndex = Math.max(0,
+                    Math.min(queue.items.size() - 1, acceptedBeforeTarget));
+        }
+        return queue;
     }
 
     private Uri normalizeUri(String value) {
