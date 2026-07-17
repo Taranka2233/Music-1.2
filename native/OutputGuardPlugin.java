@@ -20,7 +20,7 @@ public class OutputGuardPlugin extends Plugin {
         public void onReceive(Context context, Intent intent) {
             if (!AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) return;
             getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
-                    "if(typeof pause==='function'){pause();if(typeof toast==='function')toast('НАУШНИКИ ОТКЛЮЧЕНЫ // ПАУЗА')}" , null));
+                    "if(localStorage.getItem('n54_media3_enabled')!=='1'&&typeof pause==='function'){pause();if(typeof toast==='function')toast('НАУШНИКИ ОТКЛЮЧЕНЫ // ПАУЗА')}" , null));
             JSObject data = new JSObject();
             data.put("reason", "outputDisconnected");
             notifyListeners("disconnected", data, true);
