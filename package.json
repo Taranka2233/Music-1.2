@@ -1,16 +1,20 @@
 {
   "name": "n54-audio-deck",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Матовая киберпанк-дека: локальный аудиоплеер на одном HTML-файле",
+  "description": "N54 Audio Deck: локальный Android-аудиоплеер с каноническим web-источником и immutable dist-сборкой",
   "scripts": {
-    "runtime": "node scripts/copy-runtime.mjs",
+    "build:web": "node scripts/build-web.mjs",
     "model": "node scripts/fetch-yamnet.mjs",
-    "add:android": "npm run runtime && npm run model && cap add android && capacitor-assets generate --android && node scripts/patch-android.mjs && cap sync android",
-    "sync": "npm run runtime && npm run model && node scripts/patch-android.mjs && cap sync android",
+    "capacitor:sync:before": "npm run build:web && node scripts/extra-native.mjs && node scripts/version-android.mjs",
+    "add:android": "npm run model && npm run build:web && cap add android && capacitor-assets generate --android && node scripts/patch-android-v2.mjs && cap sync android",
+    "sync": "npm run model && npm run build:web && node scripts/patch-android-v2.mjs && cap sync android",
     "apk": "cd android && ./gradlew assembleDebug",
-    "serve": "npx --yes serve www -l 5173",
-    "assets": "capacitor-assets generate --android"
+    "serve": "npm run build:web && npx --yes serve dist -l 5173",
+    "assets": "capacitor-assets generate --android",
+    "check:source": "node scripts/check-app.mjs",
+    "test:behavior": "node scripts/behavior-tests.mjs",
+    "check": "npm run check:source && npm run test:behavior && npm run build:web"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

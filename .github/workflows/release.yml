@@ -1,0 +1,105 @@
+name: Signed Release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Проверить исходники и собрать dist
+        run: |
+          npm run check
+          cmp -s www/index.html dist/index.html
+          test -f dist/capacitor.js
+          test -f dist/build-manifest.json
+          git diff --exit-code -- www package.json package-lock.json capacitor.config.json
+
+      - name: Локальная модель YAMNet
+        run: npm run model
+
+      - name: Создать Android-проект
+        run: |
+          npx cap add android
+          npx @capacitor/assets generate --android
+          node scripts/patch-android-v2.mjs
+          npx cap sync android
+
+      - name: Собрать unsigned release
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Проверить unsigned bundle
+        run: |
+          set -euo pipefail
+          SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$SRC"
+          EMBEDDED_SHA=$(unzip -p "$SRC" assets/public/index.html | sha256sum | cut -d' ' -f1)
+          DIST_SHA=$(sha256sum dist/index.html | cut -d' ' -f1)
+          test "$EMBEDDED_SHA" = "$DIST_SHA"
+          unzip -Z1 "$SRC" | grep -q 'assets/public/build-manifest.json'
+          unzip -Z1 "$SRC" | grep -q 'assets/public/widget-bridge-v2.js'
+          ! unzip -p "$SRC" assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
+          ! unzip -p "$SRC" assets/public/index.html | grep -q 'function frame()'
+
+      - name: Выравнять и подписать release
+        env:
+          N54_KEYSTORE_BASE64: ${{ secrets.N54_KEYSTORE_BASE64 }}
+          N54_KEYSTORE_PASSWORD: ${{ secrets.N54_KEYSTORE_PASSWORD }}
+          N54_KEY_ALIAS: ${{ secrets.N54_KEY_ALIAS }}
+          N54_KEY_PASSWORD: ${{ secrets.N54_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$N54_KEYSTORE_BASE64"
+          test -n "$N54_KEYSTORE_PASSWORD"
+          test -n "$N54_KEY_ALIAS"
+          test -n "$N54_KEY_PASSWORD"
+          KEYSTORE=/tmp/n54-release.jks
+          ALIGNED=/tmp/n54-aligned.apk
+          trap 'rm -f "$KEYSTORE" "$ALIGNED"' EXIT
+          printf '%s' "$N54_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          SRC=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          VERSION_NAME=$(apkanalyzer manifest version-name "$SRC")
+          VERSION_CODE=$(apkanalyzer manifest version-code "$SRC")
+          OUT="N54-Audio-Deck-${VERSION_NAME}-${VERSION_CODE}-release.apk"
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
+          "$BUILD_TOOLS/zipalign" -f -P 16 4 "$SRC" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$N54_KEY_ALIAS" --ks-pass env:N54_KEYSTORE_PASSWORD --key-pass env:N54_KEY_PASSWORD --out "$OUT" "$ALIGNED"
+          rm -f "$OUT.idsig"
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 "$OUT"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$OUT" | tee release-verification.log
+          unzip -t "$OUT" >> release-verification.log
+          printf '%s\n' "$VERSION_CODE" | tee release-version-code.txt
+          printf '%s\n' "$VERSION_NAME" | tee release-version-name.txt
+          sha256sum "$OUT" | tee release-sha256.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: n54-audio-deck-signed-release
+          path: |
+            N54-Audio-Deck-*-release.apk
+            release-verification.log
+            release-version-code.txt
+            release-version-name.txt
+            release-sha256.txt
+            dist/build-manifest.json
+          if-no-files-found: error

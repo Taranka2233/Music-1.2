@@ -1,9 +1,9 @@
 {
   "appId": "net.nightcity.n54deck",
   "appName": "N54 Audio Deck",
-  "webDir": "www",
+  "webDir": "dist",
   "android": {
-    "allowMixedContent": true,
+    "allowMixedContent": false,
     "backgroundColor": "#101216"
   }
 }

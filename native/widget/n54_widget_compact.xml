@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/n54_widget_bg"
+    android:padding="10dp">
+
+    <ImageView
+        android:id="@+id/widget_cover"
+        android:layout_width="58dp"
+        android:layout_height="58dp"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/app_name" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="#F0F2F5"
+            android:textStyle="bold"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="#AAB1BC"
+            android:textSize="11sp"
+            android:layout_marginTop="2dp" />
+
+        <ProgressBar
+            android:id="@+id/widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:layout_marginTop="7dp"
+            android:max="1000"
+            android:progress="0"
+            android:progressTint="#F4E735"
+            android:progressBackgroundTint="#4B515C" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_favorite"
+        android:layout_width="40dp"
+        android:layout_height="48dp"
+        android:gravity="center"
+        android:text="☆"
+        android:textColor="#F4E735"
+        android:textSize="24sp" />
+
+    <TextView
+        android:id="@+id/widget_prev"
+        android:layout_width="40dp"
+        android:layout_height="48dp"
+        android:gravity="center"
+        android:text="◀"
+        android:textColor="#F4E735"
+        android:textSize="20sp" />
+
+    <TextView
+        android:id="@+id/widget_play"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:gravity="center"
+        android:text="▶"
+        android:textColor="#111318"
+        android:textSize="22sp"
+        android:background="@drawable/n54_widget_play" />
+
+    <TextView
+        android:id="@+id/widget_next"
+        android:layout_width="40dp"
+        android:layout_height="48dp"
+        android:gravity="center"
+        android:text="▶"
+        android:textColor="#F4E735"
+        android:textSize="20sp" />
+</LinearLayout>

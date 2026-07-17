@@ -378,6 +378,15 @@ public class AudioAnalyzerPlugin extends Plugin {
         return (int) Math.round(bpm);
     }
 
+    @Override
+    protected void handleOnDestroy() {
+        worker.shutdownNow();
+        synchronized (this) {
+            if (classifier != null) { classifier.close(); classifier = null; }
+        }
+        super.handleOnDestroy();
+    }
+
     private static String safeMessage(Exception e) {
         return e.getMessage() == null || e.getMessage().isEmpty() ? e.getClass().getSimpleName() : e.getMessage();
     }
