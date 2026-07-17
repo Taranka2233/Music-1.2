@@ -30,9 +30,7 @@ public final class N54PlaybackService extends MediaSessionService {
                 .setAudioAttributes(audioAttributes, true)
                 .build();
         player.setHandleAudioBecomingNoisy(true);
-        mediaSession = new MediaSession.Builder(this, player)
-                .setId(SESSION_ID)
-                .build();
+        mediaSession = new MediaSession.Builder(this, player).build();
     }
 
     @Nullable
