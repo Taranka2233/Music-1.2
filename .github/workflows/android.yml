@@ -33,7 +33,9 @@ jobs:
           test -f dist/index.html
           test -f dist/capacitor.js
           test -f dist/build-manifest.json
-          test -f dist/media3-bridge.js
+          test -f dist/media3-bridge-v3.js
+          test ! -f dist/media3-bridge.js
+          test ! -f dist/media3-bridge-v2.js
           cmp -s www/index.html dist/index.html
           git diff --exit-code -- www package.json package-lock.json capacitor.config.json
 
@@ -72,6 +74,7 @@ jobs:
           grep -q 'N54WidgetProvider' android/app/src/main/AndroidManifest.xml
           grep -q 'N54PlaybackService' android/app/src/main/AndroidManifest.xml
           grep -q 'androidx.media3.session.MediaSessionService' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:exported="false"' android/app/src/main/AndroidManifest.xml
           grep -q 'HomeWidgetPlugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
           grep -q 'OutputGuardPlugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
           grep -q 'N54Media3Plugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
@@ -79,6 +82,8 @@ jobs:
           grep -q 'partiallyUpdateAppWidget' android/app/src/main/java/net/nightcity/n54deck/N54WidgetProvider.java
           grep -q 'media3-exoplayer:1.10.1' android/app/build.gradle
           grep -q 'media3-session:1.10.1' android/app/build.gradle
+          grep -q 'content://' android/app/src/main/java/net/nightcity/n54deck/N54Media3Plugin.java
+          grep -q 'file:///' android/app/src/main/java/net/nightcity/n54deck/N54Media3Plugin.java
 
       - name: Собрать APK
         run: |
@@ -127,9 +132,11 @@ jobs:
           SOURCE_SHA=$(sha256sum www/index.html | cut -d' ' -f1)
           [ "$EMBEDDED_SHA" = "$DIST_SHA" ] || STATUS=1
           [ "$DIST_SHA" = "$SOURCE_SHA" ] || STATUS=1
-          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js media3-bridge.js; do
+          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js media3-bridge-v3.js; do
             unzip -Z1 "$APK" | grep -q "assets/public/$FILE" || STATUS=1
           done
+          unzip -Z1 "$APK" | grep -q 'assets/public/media3-bridge.js' && STATUS=1
+          unzip -Z1 "$APK" | grep -q 'assets/public/media3-bridge-v2.js' && STATUS=1
           EMBEDDED_INDEX=$(mktemp)
           unzip -p "$APK" assets/public/index.html > "$EMBEDDED_INDEX"
           grep -q 'widget-bridge-v2.js' "$EMBEDDED_INDEX" || STATUS=1
