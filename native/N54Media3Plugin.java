@@ -28,6 +28,8 @@ import java.util.List;
 @CapacitorPlugin(name = "N54Media3")
 public final class N54Media3Plugin extends Plugin {
     public static final String MEDIA3_VERSION = "1.10.1";
+    private static final String CONTENT_PROXY = "/_capacitor_content_";
+    private static final String FILE_PROXY = "/_capacitor_file_";
 
     private ListenableFuture<MediaController> controllerFuture;
     private MediaController controller;
@@ -69,10 +71,13 @@ public final class N54Media3Plugin extends Plugin {
         }
         SessionToken token = new SessionToken(
                 getContext(), new ComponentName(getContext(), N54PlaybackService.class));
-        controllerFuture = new MediaController.Builder(getContext(), token).buildAsync();
-        controllerFuture.addListener(() -> {
+        ListenableFuture<MediaController> future =
+                new MediaController.Builder(getContext(), token).buildAsync();
+        controllerFuture = future;
+        future.addListener(() -> {
+            if (controllerFuture != future) return;
             try {
-                controller = controllerFuture.get();
+                controller = future.get();
                 controller.addListener(listener);
                 controllerFuture = null;
                 call.resolve(state());
@@ -108,23 +113,24 @@ public final class N54Media3Plugin extends Plugin {
             List<MediaItem> items = new ArrayList<>();
             for (int i = 0; i < input.length(); i++) {
                 JSONObject row = input.getJSONObject(i);
-                String uri = row.optString("uri", "");
-                if (uri.isEmpty()) continue;
-                String id = row.optString("id", uri);
+                String uriValue = row.optString("uri", "");
+                Uri mediaUri = normalizeUri(uriValue);
+                if (mediaUri == null) continue;
+                String id = row.optString("id", uriValue);
                 MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                         .setTitle(row.optString("title", "Без названия"))
                         .setArtist(row.optString("artist", "Неизвестный"))
                         .setAlbumTitle(row.optString("album", "N54 Audio Deck"));
-                String artwork = row.optString("artworkUri", "");
-                if (!artwork.isEmpty()) metadata.setArtworkUri(Uri.parse(artwork));
+                Uri artworkUri = normalizeUri(row.optString("artworkUri", ""));
+                if (artworkUri != null) metadata.setArtworkUri(artworkUri);
                 items.add(new MediaItem.Builder()
                         .setMediaId(id)
-                        .setUri(Uri.parse(uri))
+                        .setUri(mediaUri)
                         .setMediaMetadata(metadata.build())
                         .build());
             }
             if (items.isEmpty()) {
-                call.reject("Media3 queue has no playable URI");
+                call.reject("Media3 queue has no native playable URI");
                 return;
             }
             int index = Math.max(0, Math.min(items.size() - 1, call.getInt("index", 0)));
@@ -188,6 +194,21 @@ public final class N54Media3Plugin extends Plugin {
         call.resolve(state());
     }
 
+    private Uri normalizeUri(String value) {
+        if (value == null || value.isEmpty()) return null;
+        Uri parsed = Uri.parse(value);
+        String path = parsed.getPath();
+        if (path != null && path.startsWith(CONTENT_PROXY)) {
+            return Uri.parse("content:" + path.substring(CONTENT_PROXY.length()));
+        }
+        if (path != null && path.startsWith(FILE_PROXY)) {
+            return Uri.parse("file://" + path.substring(FILE_PROXY.length()));
+        }
+        String scheme = parsed.getScheme();
+        if (scheme == null || "blob".equalsIgnoreCase(scheme)) return null;
+        return parsed;
+    }
+
     private boolean requireController(PluginCall call) {
         if (controller != null) return true;
         call.reject("Media3 controller is not connected");
@@ -225,7 +246,7 @@ public final class N54Media3Plugin extends Plugin {
             controller = null;
         }
         if (controllerFuture != null) {
-            controllerFuture.cancel(true);
+            MediaController.releaseFuture(controllerFuture);
             controllerFuture = null;
         }
     }
