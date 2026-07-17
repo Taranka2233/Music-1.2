@@ -5,6 +5,7 @@
   "description": "N54 Audio Deck: локальный Android-аудиоплеер с каноническим web-источником и immutable dist-сборкой",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
+    "postbuild:web": "node scripts/build-web-v3.mjs",
     "model": "node scripts/fetch-yamnet.mjs",
     "capacitor:sync:before": "npm run build:web && node scripts/android-toolchain.mjs && node scripts/extra-native.mjs && node scripts/version-android.mjs && node scripts/media3-private-pilot-v2.mjs",
     "add:android": "npm run model && npm run build:web && cap add android && capacitor-assets generate --android && node scripts/patch-android-v2.mjs && cap sync android",
