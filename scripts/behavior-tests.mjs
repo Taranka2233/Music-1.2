@@ -23,6 +23,6 @@ async function widget(){
  const document={addEventListener:(n,fn)=>{events[n]=fn},dispatchEvent:e=>events[e.type]?.(e),querySelector:s=>selectors[s]?{click:()=>clicks[selectors[s]]++}:s==='#ct'||s==='#tt'?{textContent:'0:00'}:null};
  const context=run('www/widget-actions-v2.js',{document,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,S:{mode:'deck'},cur:()=>({fav:false}),Capacitor:{isNativePlatform:()=>true,isPluginAvailable:()=>true,registerPlugin:()=>api}});
  await Promise.resolve();await Promise.resolve();assert.equal(clicks.next,0);context.N54_BOOT_READY=true;events['n54:boot-ready']();assert.equal(clicks.next,1);listener({command:'toggle'});assert.equal(clicks.toggle,1);
- const bootEvents={},boot=run('www/boot-ready.js',{document:{dispatchEvent:e=>bootEvents[e.type]?.(e)},addEventListener:()=>{},setTimeout:()=>0,breach:async()=>42});bootEvents['n54:boot-ready']=()=>{boot.fired=true};assert.equal(await boot.breach(),42);assert.equal(boot.N54_BOOT_READY,true);assert.equal(boot.fired,true);
+ const bootEvents={},boot=run('www/boot-ready.js',{document:{querySelector:()=>null,createElement:()=>({dataset:{}}),head:{append(){}},dispatchEvent:e=>bootEvents[e.type]?.(e)},addEventListener:()=>{},setTimeout:()=>0,breach:async()=>42});bootEvents['n54:boot-ready']=()=>{boot.fired=true};assert.equal(await boot.breach(),42);assert.equal(boot.N54_BOOT_READY,true);assert.equal(boot.fired,true);
 }
-await backup();await widget();console.log('OK: backup rollback, boot-ready and cold widget commands passed.');
+await backup();await widget();await import('./media3-behavior.mjs');console.log('OK: backup rollback, boot-ready, widget and Media3 guards passed.');
