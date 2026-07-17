@@ -7,8 +7,6 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>N54 // AUDIO DECK</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Chakra+Petch:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 /* ═══ ТОКЕНЫ ══════════════════════════════════════════ */
 :root{
@@ -221,7 +219,6 @@ body.paused .eqi i{animation-play-state:paused}
   transform:scale(calc(1.03 + var(--bass,0) * .05))}
 #bg.on{opacity:.55}
 .stage::before{content:"";position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 10%,transparent 25%,var(--pane) 96%);z-index:1}
-#viz{position:absolute;inset:0;width:100%;height:100%;z-index:2}
 #lyr{position:absolute;inset:0;z-index:3;overflow-y:auto;padding:20px;display:none;
   font-family:var(--mono);font-size:12px;line-height:2;color:var(--dim);white-space:pre-wrap;background:rgba(8,9,12,.82)}
 #lyr.on{display:block}
@@ -456,7 +453,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
     <section class="view act" id="v-radio">
       <div class="head">
         <div class="h1">РАДИО <b>НАЙТ-СИТИ</b></div>
-        <div class="sub">СТАНЦИИ СОБИРАЮТСЯ ИЗ ТВОЕЙ БИБЛИОТЕКИ ПО ЖАНРУ</div>
+        <div class="sub">ИНТЕРНЕТ-ЭФИР // ТОЛЬКО HTTPS-ПОТОКИ</div>
       </div>
       <div class="dial"><b></b><i id="dialN"></i></div>
       <div id="radioBody"></div>
@@ -524,7 +521,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
       </div>
 
       <div class="slot">
-        <div style="flex:1"><div class="sl">AI Auto-EQ</div>
+        <div style="flex:1"><div class="sl">AI-профиль EQ</div>
         <div class="sd" id="autoEqInfo">Подбирает мягкую кривую по локальному анализу жанра, голоса и энергии.</div></div>
         <div class="sw" id="autoEqSw"><i></i></div>
       </div>
@@ -630,7 +627,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 
   <div class="stage" id="stage">
     <img id="bg" alt="">
-    <canvas id="viz"></canvas>
+    <!-- COVER-ONLY-PLAYER 2026-07 -->
     <div id="lyr"></div>
   </div>
 
@@ -659,7 +656,6 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
     <button class="key" id="rep">REP</button>
   </div>
   <div class="subdeck">
-    <button id="vizBtn">ВИЗ · 1</button>
     <button id="abBtn">A–B</button>
     <button id="lyrBtn">ТЕКСТ</button>
     <button id="bdBtn">BD</button>
@@ -693,6 +689,8 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 <script src="vendor/jsmediatags.js"></script>
 <script>
 'use strict';
+/* AUDIT-FIXES 2026-07: runtime correctness, sync, EQ response, radio isolation. */
+/* AUDIT-FOLLOWUP 2026-07: queue identity, radio reopen, complete MediaStore identity set. */
 /* ═══════════════════════════════════════════════════════
    N54 AUDIO DECK — однофайловый плеер. Всё локально.
    ═══════════════════════════════════════════════════════ */
@@ -807,7 +805,6 @@ const S = {
   corp: 'samurai',
   eq: {on:false, auto:false, gains:new Array(10).fill(0), preset:'FLAT'},
   fx: {cmp:false, wide:false, xf:0},
-  viz: 0,
   ab: null,           // [a,b]
   sleep: 0,
   net: false,           // искать обложки в сети — только по явному согласию
@@ -866,8 +863,9 @@ const CORPS = {
 
 /* ─── АУДИОГРАФ ───────────────────────────────────────── */
 const A = { ctx:null, decks:[], active:0, preamp:null, eq:[], cmp:null, cmpIn:null, cmpOut:null,
-            wideIn:null, wideOut:null, splitter:null, merger:null, delay:null,
-            limiter:null, master:null, an:null, data:null, wave:null, wired:false, error:null };
+             wideIn:null, wideOut:null, splitter:null, merger:null, delay:null,
+             limiter:null, master:null, an:null, data:null, wave:null, wired:false, error:null,
+             eqPeak:0, eqHeadroom:0 };
 
 function audioFault(e){
   A.error = e || new Error('audio graph');
@@ -935,15 +933,54 @@ const au = () => S.mode === 'radio' ? $('#a2') : $(A.active === 0 ? '#a0' : '#a1
 const other = () => A.active === 0 ? 1 : 0;
 function resume(){ if(A.ctx && A.ctx.state === 'suspended') A.ctx.resume(); }
 
+function biquadCoeffs(type, f, gain, sampleRate, Q = 1.2){
+  const w0 = 2*Math.PI*Math.min(f, sampleRate*.49)/sampleRate;
+  const cos = Math.cos(w0), sin = Math.sin(w0), amp = Math.pow(10, gain/40);
+  let b0,b1,b2,a0,a1,a2;
+  if(type === 'peaking'){
+    const alpha = sin/(2*Q);
+    b0=1+alpha*amp; b1=-2*cos; b2=1-alpha*amp;
+    a0=1+alpha/amp; a1=-2*cos; a2=1-alpha/amp;
+  }else{
+    const alpha = sin/Math.SQRT2, beta = 2*Math.sqrt(amp)*alpha;
+    if(type === 'lowshelf'){
+      b0=amp*((amp+1)-(amp-1)*cos+beta); b1=2*amp*((amp-1)-(amp+1)*cos); b2=amp*((amp+1)-(amp-1)*cos-beta);
+      a0=(amp+1)+(amp-1)*cos+beta; a1=-2*((amp-1)+(amp+1)*cos); a2=(amp+1)+(amp-1)*cos-beta;
+    }else{
+      b0=amp*((amp+1)+(amp-1)*cos+beta); b1=-2*amp*((amp-1)+(amp+1)*cos); b2=amp*((amp+1)+(amp-1)*cos-beta);
+      a0=(amp+1)-(amp-1)*cos+beta; a1=2*((amp-1)-(amp+1)*cos); a2=(amp+1)-(amp-1)*cos-beta;
+    }
+  }
+  return [b0/a0,b1/a0,b2/a0,a1/a0,a2/a0];
+}
+function biquadMagnitude(c, w){
+  const cos=Math.cos(w), sin=Math.sin(w), cos2=Math.cos(2*w), sin2=Math.sin(2*w);
+  const nr=c[0]+c[1]*cos+c[2]*cos2, ni=-(c[1]*sin+c[2]*sin2);
+  const dr=1+c[3]*cos+c[4]*cos2, di=-(c[3]*sin+c[4]*sin2);
+  return Math.sqrt((nr*nr+ni*ni)/Math.max(1e-12,dr*dr+di*di));
+}
+function eqMetrics(gains){
+  const sampleRate = A.ctx ? A.ctx.sampleRate : 48000;
+  const hi = Math.min(20000, sampleRate*.48), n = 181;
+  const freqs = new Float32Array(n), db = new Float32Array(n);
+  const coeffs = BANDS.map((f,i) => biquadCoeffs(i===0?'lowshelf':i===BANDS.length-1?'highshelf':'peaking', f, gains[i]||0, sampleRate));
+  let peak = -120;
+  for(let i=0;i<n;i++){
+    const f = 20*Math.pow(hi/20, i/(n-1)); freqs[i]=f;
+    const w = 2*Math.PI*f/sampleRate;
+    let mag=1; for(const c of coeffs) mag *= biquadMagnitude(c,w);
+    const value=20*Math.log10(Math.max(1e-7,mag)); db[i]=value; peak=Math.max(peak,value);
+  }
+  return {freqs,db,peak:Math.max(0,peak)};
+}
 function applyEQ(){
   const gains = S.eq.on ? S.eq.gains : new Array(BANDS.length).fill(0);
-  const peak = Math.max(0, ...gains);
-  // Соседние полосы перекрываются, поэтому оставляем ещё 1.5 дБ поверх
-  // максимального подъёма. Это не даёт пресету становиться просто «громче».
-  const headroom = S.eq.on ? Math.min(15, peak + (peak ? 1.5 : 0)) : 0;
+  const metrics = eqMetrics(gains);
+  const headroom = S.eq.on && metrics.peak > .05 ? Math.min(15, metrics.peak + .8) : 0;
+  A.eqPeak = metrics.peak; A.eqHeadroom = headroom;
   const label = $('#eqHeadroom');
   if(label) label.textContent = headroom ? `ЗАПАС −${headroom.toFixed(1)} дБ` : 'ЗАПАС 0.0 дБ';
-  drawEQCurve();
+  drawEQCurve(metrics);
   if(!A.eq.length || !A.ctx) return;
   const now = A.ctx.currentTime;
   A.preamp.gain.cancelScheduledValues(now);
@@ -1039,6 +1076,9 @@ function scanReport(r){
       ${r.folders ? `<dl class="dl"><dt>ПАПОК ПРОЙДЕНО</dt><dd>${r.folders}</dd></dl>` : ''}
       <dl class="dl"><dt>ОПОЗНАНО КАК АУДИО</dt><dd class="a">${r.audio}</dd></dl>
       <dl class="dl"><dt>ДОБАВЛЕНО В ПАМЯТЬ</dt><dd class="a">${r.added}</dd></dl>
+      ${r.updated ? `<dl class="dl"><dt>ОБНОВЛЕНО</dt><dd class="a">${r.updated}</dd></dl>` : ''}
+      ${r.removed ? `<dl class="dl"><dt>УДАЛЕНО ИЗ ИНДЕКСА</dt><dd>${r.removed}</dd></dl>` : ''}
+      ${r.unchanged ? `<dl class="dl"><dt>БЕЗ ИЗМЕНЕНИЙ</dt><dd>${r.unchanged}</dd></dl>` : ''}
       ${r.dupes ? `<dl class="dl"><dt>УЖЕ БЫЛИ</dt><dd>${r.dupes}</dd></dl>` : ''}
       ${r.skipped ? `<dl class="dl"><dt>РИНГТОНЫ И БУДИЛЬНИКИ</dt><dd>${r.skipped} · ПРОПУЩЕНЫ</dd></dl>` : ''}
       ${r.bad.length ? `<dl class="dl"><dt>БРАУЗЕР НЕ ДЕКОДИРУЕТ</dt><dd style="color:var(--warn)">${r.bad.length} · ${badList.join(', ')}</dd></dl>` : ''}
@@ -1173,8 +1213,8 @@ function artURL(t){
 function save(t){
   const m = {id:t.id, name:t.name, size:t.size, type:t.type, title:t.title, artist:t.artist,
     album:t.album, year:t.year, genre:t.genre, no:t.no, dur:t.dur, folder:t.folder,
-    lyrics:t.lyrics, plays:t.plays, skips:t.skips || 0, fav:t.fav, added:t.added,
-    ai:t.ai || null};
+    lyrics:t.lyrics, plays:t.plays, skips:t.skips || 0, fav:t.fav, added:t.added, lastPlayed:t.lastPlayed || 0, resumePos:t.resumePos || 0,
+    ai:t.ai || null}; /* N54_SMART_HISTORY_FIELDS */
   return DB.put('tracks', t.native
     ? Object.assign(m, {native:true, uri:t.uri, artUri:t.artUri})
     : Object.assign(m, {file:t.file, art:t.art}));
@@ -1189,33 +1229,82 @@ addEventListener('error', e => {
 
 async function nativeScan(includeAll = false){
   if(!Scanner) return toast(NATIVE ? 'ПЛАГИН СКАНЕРА НЕ ПОДНЯЛСЯ' : 'НАТИВНЫЙ СКАНЕР ТОЛЬКО В APK');
-  toast(includeAll ? 'ЗАБИРАЮ ВСЁ, ВКЛЮЧАЯ РИНГТОНЫ...' : 'ЧИТАЮ ИНДЕКС MEDIASTORE...');
+  toast(includeAll ? 'СИНХРОНИЗИРУЮ ВСЁ, ВКЛЮЧАЯ РИНГТОНЫ...' : 'СИНХРОНИЗИРУЮ MEDIASTORE...');
   let res;
   try{ res = await Scanner.scan({includeAll}); }
   catch(e){ return toast(e && e.code === 'DENIED' ? 'ДОСТУП НЕ ВЫДАН' : 'СБОЙ СКАНЕРА'); }
   if(!res || !Array.isArray(res.tracks)) return toast('СКАНЕР ВЕРНУЛ ПОВРЕЖДЁННЫЙ ОТВЕТ');
 
-  let added = 0, dupes = 0, writes = [];
+  const oldPos = S.qpos;
+  const oldCurrentId = S.qpos >= 0 ? S.queue[S.qpos] : null;
+  const wasPlaying = S.mode === 'deck' && !au().paused;
+  const seen = new Set((res.knownIds || []).map(id => 'ms' + id));
+  const writes = [];
+  let added = 0, updated = 0, unchanged = 0;
+
   for(const n of res.tracks){
     const id = 'ms' + n.id;
-    if(S.byId.has(id)){ dupes++; continue; }
-    const t = {
-      id, native:true, uri:n.uri, artUri:n.artUri, url:null, artURL:null,
-      name:n.name, size:n.size, type:n.mime || 'audio/*',
-      title:n.title || n.name, album:n.album || 'БЕЗ АЛЬБОМА',
+    seen.add(id);
+    const meta = {
+      native:true, uri:n.uri, artUri:n.artUri || '', name:n.name || '', size:n.size || 0,
+      type:n.mime || 'audio/*', title:n.title || n.name || 'БЕЗ НАЗВАНИЯ',
+      album:n.album || 'БЕЗ АЛЬБОМА',
       artist:(!n.artist || n.artist === '<unknown>') ? 'НЕИЗВЕСТНЫЙ' : n.artist,
       year:n.year ? String(n.year) : '', genre:n.genre || '', no:n.no ? String(n.no) : '',
-      dur:n.dur || 0, art:null, lyrics:'', plays:0, skips:0, fav:false, ai:null,
-      added:Date.now(), folder:n.folder || ''
+      dur:n.dur || 0, folder:n.folder || ''
     };
-    S.lib.push(t); S.byId.set(id, t); writes.push(save(t)); added++;
+    const t = S.byId.get(id);
+    if(t){
+      const before = [t.uri,t.artUri,t.name,t.size,t.type,t.title,t.album,t.artist,t.year,t.genre,t.no,t.dur,t.folder].join('\u0001');
+      const oldUri = t.uri, oldArt = t.artUri;
+      Object.assign(t, meta);
+      if(oldUri !== t.uri && t.url){ URL.revokeObjectURL(t.url); t.url = null; }
+      if(oldArt !== t.artUri && t.artURL){ URL.revokeObjectURL(t.artURL); t.artURL = null; }
+      const after = [t.uri,t.artUri,t.name,t.size,t.type,t.title,t.album,t.artist,t.year,t.genre,t.no,t.dur,t.folder].join('\u0001');
+      before === after ? unchanged++ : updated++;
+      writes.push(save(t));
+    }else{
+      const fresh = Object.assign({id, url:null, artURL:null, art:null, lyrics:'', plays:0, skips:0,
+        fav:false, ai:null, added:Date.now()}, meta);
+      S.lib.push(fresh); S.byId.set(id, fresh); writes.push(save(fresh)); added++;
+    }
+  }
+
+  const stale = S.lib.filter(t => t.native && !seen.has(t.id));
+  const staleIds = new Set(stale.map(t => t.id));
+  stale.forEach(t => {
+    if(t.url) URL.revokeObjectURL(t.url);
+    if(t.artURL) URL.revokeObjectURL(t.artURL);
+    S.byId.delete(t.id);
+    writes.push(DB.del('tracks', t.id));
+  });
+  if(staleIds.size){
+    S.lib = S.lib.filter(t => !staleIds.has(t.id));
+    S.playlists.forEach(p => p.ids = p.ids.filter(id => !staleIds.has(id)));
+    S.qsrc = S.qsrc.filter(id => !staleIds.has(id));
+    S.queue = S.queue.filter(id => !staleIds.has(id));
   }
   await Promise.all(writes);
-  if(S.qpos < 0 && added){ S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false); }
-  render(); stats(); permUI();
-  if(S.net && added) hunt();
-  scanReport({total:res.count + (res.skipped||0), audio:res.count, added, dupes, bad:[],
-              folders:res.folderCount||0, folderList:res.folders||[], skipped:res.skipped||0, native:true});
+
+  if(oldCurrentId && S.queue.includes(oldCurrentId)) S.qpos = S.queue.indexOf(oldCurrentId);
+  else if(S.queue.length){
+    S.qpos = Math.min(Math.max(0, oldPos), S.queue.length - 1);
+    if(S.mode === 'deck') load(S.qpos, wasPlaying);
+  }else{
+    S.qpos = -1;
+    if(S.mode === 'deck') resetDeckUI();
+  }
+  if(S.qpos < 0 && S.lib.length){
+    S.qsrc = S.lib.map(t => t.id); S.queue = S.qsrc.slice(); order(); load(0, false);
+  }else if(S.mode === 'deck' && cur()){
+    paint(cur()); session(cur());
+  }
+
+  saveKV(); render(); stats(); permUI();
+  if(S.net && (added || updated)) hunt();
+  scanReport({total:res.count + (res.skipped||0), audio:res.count, added, updated, unchanged,
+              removed:stale.length, dupes:0, bad:[], folders:res.folderCount||0,
+              folderList:res.folders||[], skipped:res.skipped||0, native:true});
 }
 /* ─── ОБЛОЖКИ ИЗ СЕТИ ─────────────────────────────────────
    MusicBrainz + Cover Art Archive. Почему не iTunes: у него CORS отдаётся
@@ -1329,7 +1418,7 @@ function saveKV(){   // дебаунс: не молотим IndexedDB на ка�
     kvT = null;
     DB.put('kv', {
       shuffle:S.shuffle, repeat:S.repeat, vol:S.vol, rate:S.rate, playlists:S.playlists,
-      cred:S.cred, corp:S.corp, eq:S.eq, fx:S.fx, viz:S.viz, sort:S.sort, net:S.net,
+      cred:S.cred, corp:S.corp, eq:S.eq, fx:S.fx, sort:S.sort, net:S.net,
       queue:S.queue, qsrc:S.qsrc, qpos:S.qpos, station:S.station
     }, 'cfg');
   }, 400);
@@ -1360,7 +1449,7 @@ function setQueue(ids, startId){
 }
 
 /* ─── ВОСПРОИЗВЕДЕНИЕ ─────────────────────────────────── */
-let xfArmed = false, fadeTimer = null;
+let xfArmed = false, fadeTimer = null, crossfadeMetaTimer = null;
 let failedMedia = '';
 
 function trackFailure(el){
@@ -1382,6 +1471,7 @@ function load(pos, autoplay = true, viaFade = false){
   if(pos < 0 || pos >= S.queue.length) return;
   const t = S.byId.get(S.queue[pos]);
   if(!t) return;
+  clearTimeout(crossfadeMetaTimer); crossfadeMetaTimer = null;
   S.qpos = pos;
   failedMedia = '';
   xfArmed = false;
@@ -1399,7 +1489,8 @@ function load(pos, autoplay = true, viaFade = false){
     A.active = nx;
   }else{
     const el = au();
-    el.src = url(t); el.playbackRate = S.rate;
+    el.src = url(t); el.playbackRate = S.rate; /* N54_RESTORE_LONG_TRACK */
+    { const saved=Number(t.resumePos)||0; if((Number(t.dur)||0)>=600 && saved>=15){ el.addEventListener('loadedmetadata',()=>{ const duration=Number(el.duration)||Number(t.dur)||0; if(cur()===t && saved<duration-30){ el.currentTime=saved; toast('ПРОДОЛЖАЮ С '+fmt(saved)); } },{once:true}); } }
     if(A.ctx){ A.decks.forEach((d,i) => {
       d.gain.gain.cancelScheduledValues(A.ctx.currentTime);
       d.gain.gain.value = i === A.active ? 1 : 0;
@@ -1408,12 +1499,20 @@ function load(pos, autoplay = true, viaFade = false){
     if(autoplay) play();
   }
   S.ab = null; $('#abBtn').classList.remove('on'); $('#abBtn').textContent = 'A–B';
-  if(S.eq.auto) applyAutoEQ(t, S.view === 'chip');
-  paint(t); render(); session(t); glitch();
+  const commitTrackUI = () => {
+    if(S.mode !== 'deck' || cur() !== t) return;
+    if(S.eq.auto) applyAutoEQ(t, S.view === 'chip');
+    paint(t); render(); session(t); glitch();
+  };
+  if(viaFade && S.fx.xf > 0){
+    render();
+    crossfadeMetaTimer = setTimeout(commitTrackUI, Math.max(120, S.fx.xf * 500));
+  }else commitTrackUI();
   saveKV();
 }
 
 function paint(t){
+  setRadioModeUI(false);
   const a = artURL(t);
   $('#nt').textContent = t.title;
   $('#na').textContent = [t.artist, t.album].filter(x => x && x !== 'БЕЗ АЛЬБОМА').join('  ·  ') || t.artist;
@@ -1530,7 +1629,7 @@ function icon(on){
   $('#miniPlay').innerHTML = `<svg viewBox="0 0 24 24">${p}</svg>`;
 }
 
-let lastTick = 0, playedMs = 0, counted = false;
+let lastTick = 0, playedMs = 0, counted = false, resumeSavedAt = 0; /* N54_RESUME_CHECKPOINTS */
 function tick(){
   const el = au();
   if(!el.duration) return;
@@ -1538,7 +1637,7 @@ function tick(){
   if(!counted && el.currentTime > Math.min(20, el.duration * .5)){
     counted = true;
     const t = cur();
-    if(t){ t.plays++; save(t); addXP(3); topUI(); }
+    if(t){ t.plays++; t.lastPlayed=Date.now(); t.resumePos=0; save(t); addXP(3); topUI(); }
   }
   // A–B повтор
   if(S.ab && S.ab[1] != null && el.currentTime >= S.ab[1]) el.currentTime = S.ab[0];
@@ -1556,6 +1655,10 @@ function tick(){
     playedMs += now - lastTick;
     S.cred.ms += now - lastTick;
     if(playedMs > 30000){ playedMs = 0; addXP(1); }
+  }
+  if(S.mode === 'deck' && !el.paused && Date.now() - resumeSavedAt > 10000){
+    const track = cur();
+    if(track){ resumeSavedAt = Date.now(); track.lastPlayed = resumeSavedAt; track.resumePos = el.currentTime; save(track); }
   }
   lastTick = now;
 }
@@ -1591,11 +1694,34 @@ $('#volR').onchange = saveKV;
 
 /* ─── ЭКРАН "СЕЙЧАС" ──────────────────────────────────── */
 const now = $('#now');
-$('#mini').onclick = () => { if(S.qpos >= 0) now.classList.add('up'); armBack(); };
+$('#mini').onclick = () => { if(S.mode === 'radio' || S.qpos >= 0) now.classList.add('up'); armBack(); };
 $('#nowDown').onclick = () => { if(now.classList.contains('up')){ now.classList.remove('up'); releaseBack(); } };
-$('#nowFav').onclick = () => { const t = cur(); if(!t) return; t.fav = !t.fav; save(t); paint(t); render(); toast(t.fav ? 'В ИЗБРАННОМ' : 'УБРАНО ИЗ ИЗБРАННОГО'); };
-$('#nowMore').onclick = () => { const t = cur(); if(t) menu(t); };
+$('#nowFav').onclick = () => { if(S.mode === 'radio') return; const t = cur(); if(!t) return; t.fav = !t.fav; save(t); paint(t); render(); toast(t.fav ? 'В ИЗБРАННОМ' : 'УБРАНО ИЗ ИЗБРАННОГО'); };
+$('#nowMore').onclick = () => { if(S.mode === 'radio') return; const t = cur(); if(t) menu(t); };
 const cur = () => S.qpos >= 0 ? S.byId.get(S.queue[S.qpos]) : null;
+
+function setRadioModeUI(on){
+  ['#nowFav','#nowMore','#abBtn','#lyrBtn','#bdBtn'].forEach(sel => {
+    const el = $(sel); if(!el) return;
+    el.classList.toggle('hidden', on); el.disabled = on;
+  });
+  if(on){
+    $('#lyr').classList.remove('on'); $('#lyrBtn').classList.remove('on');
+    document.body.classList.remove('bd'); $('#bdBtn').classList.remove('on');
+    $('.nowmeta').classList.remove('hidden'); $('.deck').classList.remove('hidden');
+    const info = $('#autoEqInfo'); if(info) info.textContent = 'Интернет-радио идёт вне аудиографа: EQ и AI-профиль не применяются.';
+  }else updateAutoEQInfo(cur());
+}
+function resetDeckUI(){
+  pause(); S.qpos = -1; S.ab = null;
+  $('#mini').classList.add('dead'); $('#miniT').textContent = 'НЕТ СИГНАЛА'; $('#miniA').textContent = 'слоты пусты';
+  $('#miniArt').removeAttribute('src'); $('#miniArt').style.visibility = 'hidden';
+  $('#bg').classList.remove('on'); $('#bg').removeAttribute('src');
+  $('#nt').textContent = 'НЕТ СИГНАЛА'; $('#na').textContent = 'загрузи треки, чтобы начать';
+  $('#ne').textContent = 'СЛОТ ПУСТ'; $('#ct').textContent = '0:00'; $('#tt').textContent = '0:00';
+  $('#fill').style.width = '0%'; $('#miniRing').style.setProperty('--p', 0);
+  now.classList.remove('up'); setRadioModeUI(false); icon(false);
+}
 
 // свайп вниз по экрану "сейчас"
 let sy = 0, sGuard = false;
@@ -1643,8 +1769,8 @@ now.addEventListener('touchend', e => {
   st.addEventListener('lostpointercapture', reset);
 }
 
-$('#vizBtn').onclick = () => { S.viz = (S.viz + 1) % 3; $('#vizBtn').textContent = 'ВИЗ · ' + (S.viz+1); saveKV(); };
 $('#lyrBtn').onclick = () => {
+  if(S.mode === 'radio') return toast('В ЭФИРЕ ТЕКСТ НЕДОСТУПЕН');
   const t = cur();
   if(!t || !t.lyrics) return toast('ТЕКСТ НЕ ВШИТ В ФАЙЛ');
   const on = !$('#lyr').classList.contains('on');
@@ -1653,6 +1779,7 @@ $('#lyrBtn').onclick = () => {
   on ? armBack() : releaseBack();
 };
 $('#bdBtn').onclick = () => {
+  if(S.mode === 'radio') return toast('BRAINDANCE РАБОТАЕТ ТОЛЬКО С ЛОКАЛЬНЫМИ ТРЕКАМИ');
   const on = !document.body.classList.contains('bd');
   document.body.classList.toggle('bd', on);
   $('#bdBtn').classList.toggle('on', on);
@@ -1663,6 +1790,7 @@ $('#bdBtn').onclick = () => {
   else releaseBack();
 };
 $('#abBtn').onclick = () => {
+  if(S.mode === 'radio') return toast('A–B НЕДОСТУПЕН ДЛЯ ЭФИРА');
   const el = au(); if(!el.duration) return;
   const b = $('#abBtn');
   if(!S.ab){ S.ab = [el.currentTime, null]; b.textContent = 'A ✓'; b.classList.add('on'); mark(); toast('ТОЧКА A'); }
@@ -2036,16 +2164,32 @@ function toPlaylist(t){
 
 async function wipeTrack(t){
   if(!confirm(`Стереть «${t.title}» из памяти деки? Сам файл на телефоне останется.`)) return;
+  const oldPos = S.qpos;
+  const currentId = S.qpos >= 0 ? S.queue[S.qpos] : null;
+  const wasQueueCurrent = currentId === t.id;
+  const wasPlaying = S.mode === 'deck' && !au().paused;
   S.lib = S.lib.filter(x => x.id !== t.id);
   S.byId.delete(t.id);
   S.playlists.forEach(p => p.ids = p.ids.filter(id => id !== t.id));
-  const qi = S.queue.indexOf(t.id);
+  S.qsrc = S.qsrc.filter(id => id !== t.id);
   S.queue = S.queue.filter(id => id !== t.id);
-  if(qi >= 0 && qi < S.qpos) S.qpos--;
-  else if(qi === S.qpos){ if(S.queue.length) load(Math.min(S.qpos, S.queue.length-1)); else { pause(); S.qpos = -1; $('#mini').classList.add('dead'); } }
   if(t.url) URL.revokeObjectURL(t.url);
   if(t.artURL) URL.revokeObjectURL(t.artURL);
   const stored = await DB.del('tracks', t.id);
+
+  if(S.queue.length){
+    if(currentId && currentId !== t.id && S.queue.includes(currentId)){
+      S.qpos = S.queue.indexOf(currentId);
+      if(S.mode === 'deck' && cur()){ paint(cur()); session(cur()); }
+    }else{
+      S.qpos = Math.min(Math.max(0, oldPos), S.queue.length - 1);
+      if(wasQueueCurrent && S.mode === 'deck') load(S.qpos, wasPlaying);
+      else if(S.mode === 'deck' && cur()){ paint(cur()); session(cur()); }
+    }
+  }else{
+    S.qpos = -1;
+    if(S.mode === 'deck') resetDeckUI();
+  }
   saveKV(); closeSheet(); render(); stats();
   toast(stored ? 'СТЁРТО' : 'НЕ УДАЛОСЬ СОХРАНИТЬ УДАЛЕНИЕ');
 }
@@ -2345,7 +2489,7 @@ async function runAI(){
 $('#aiRun').onclick = runAI;
 
 /* ─── ЭКВАЛАЙЗЕР-ИМПЛАНТ ──────────────────────────────── */
-function drawEQCurve(){
+function drawEQCurve(precomputed){
   const canvas = $('#eqCurve');
   if(!canvas) return;
   const rect = canvas.getBoundingClientRect();
@@ -2355,42 +2499,30 @@ function drawEQCurve(){
   if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
   const c = canvas.getContext('2d');
   const acc = css('--acc'), acc2 = css('--acc2'), edge = css('--edge'), dim = css('--dim');
-  c.clearRect(0,0,W,H);
-  c.lineWidth = d;
-  c.strokeStyle = edge; c.globalAlpha = .8;
-  [-12,-6,0,6,12].forEach(db => {
-    const y = H/2 - db/24*H*.78;
-    c.beginPath(); c.moveTo(0,y); c.lineTo(W,y); c.stroke();
-  });
-  const gains = S.eq.on ? S.eq.gains : new Array(BANDS.length).fill(0);
-  const logs = BANDS.map(Math.log), lo = Math.log(20), hi = Math.log(20000);
-  const gainAt = f => {
-    const x = Math.log(f);
-    if(x <= logs[0]) return gains[0] || 0;
-    if(x >= logs[logs.length-1]) return gains[gains.length-1] || 0;
-    let i = 0; while(i < logs.length-2 && x > logs[i+1]) i++;
-    let p = (x-logs[i])/(logs[i+1]-logs[i]);
-    p = p*p*(3-2*p);
-    return (gains[i] || 0)*(1-p) + (gains[i+1] || 0)*p;
-  };
-  const points = [];
-  for(let x = 0; x <= W; x += Math.max(1,d)){
-    const f = Math.exp(lo + (x/W)*(hi-lo));
-    points.push([x, H/2 - gainAt(f)/24*H*.78]);
+  c.clearRect(0,0,W,H); c.lineWidth=d; c.strokeStyle=edge; c.globalAlpha=.8;
+  [-12,-6,0,6,12].forEach(db => { const y=H/2-db/18*H*.46; c.beginPath(); c.moveTo(0,y); c.lineTo(W,y); c.stroke(); });
+  const gains=S.eq.on?S.eq.gains:new Array(BANDS.length).fill(0);
+  const metrics=precomputed && precomputed.freqs ? precomputed : eqMetrics(gains);
+  const lo=Math.log(20), hi=Math.log(metrics.freqs[metrics.freqs.length-1]);
+  const points=[];
+  for(let i=0;i<metrics.freqs.length;i++){
+    const x=(Math.log(metrics.freqs[i])-lo)/(hi-lo)*W;
+    const value=Math.max(-18,Math.min(18,metrics.db[i]));
+    points.push([x,H/2-value/18*H*.46]);
   }
-  const grad = c.createLinearGradient(0,0,W,0); grad.addColorStop(0,acc2); grad.addColorStop(.55,acc); grad.addColorStop(1,acc2);
-  c.globalAlpha = S.eq.on ? .18 : .06; c.fillStyle = grad;
-  c.beginPath(); c.moveTo(0,H/2); points.forEach(p => c.lineTo(p[0],p[1])); c.lineTo(W,H/2); c.closePath(); c.fill();
-  c.globalAlpha = S.eq.on ? 1 : .35; c.strokeStyle = grad; c.lineWidth = Math.max(2,2*d);
-  c.beginPath(); points.forEach((p,i) => i ? c.lineTo(p[0],p[1]) : c.moveTo(p[0],p[1])); c.stroke();
-  c.globalAlpha = .75; c.fillStyle = dim; c.font = `${8*d}px monospace`; c.textBaseline = 'top';
-  [[60,'60'],[250,'250'],[1000,'1k'],[4000,'4k'],[16000,'16k']].forEach(([f,label]) => {
-    const x = (Math.log(f)-lo)/(hi-lo)*W;
-    c.fillText(label, Math.min(W-18*d, Math.max(2*d,x-7*d)), 4*d);
+  const grad=c.createLinearGradient(0,0,W,0); grad.addColorStop(0,acc2); grad.addColorStop(.55,acc); grad.addColorStop(1,acc2);
+  c.globalAlpha=S.eq.on?.18:.06; c.fillStyle=grad;
+  c.beginPath(); c.moveTo(0,H/2); points.forEach(p=>c.lineTo(p[0],p[1])); c.lineTo(W,H/2); c.closePath(); c.fill();
+  c.globalAlpha=S.eq.on?1:.35; c.strokeStyle=grad; c.lineWidth=Math.max(2,2*d);
+  c.beginPath(); points.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])); c.stroke();
+  c.globalAlpha=.75; c.fillStyle=dim; c.font=`${8*d}px monospace`; c.textBaseline='top';
+  [[60,'60'],[250,'250'],[1000,'1k'],[4000,'4k'],[16000,'16k']].forEach(([f,label])=>{
+    if(f>metrics.freqs[metrics.freqs.length-1]) return;
+    const x=(Math.log(f)-lo)/(hi-lo)*W; c.fillText(label,Math.min(W-18*d,Math.max(2*d,x-7*d)),4*d);
   });
-  c.globalAlpha = 1;
+  c.globalAlpha=1;
 }
-addEventListener('resize', drawEQCurve);
+addEventListener('resize', () => drawEQCurve());
 
 function blendEQ(a, b, amount){
   return a.map((v,i) => v*(1-amount) + b[i]*amount);
@@ -2418,6 +2550,7 @@ function autoEQCurve(t){
 }
 function updateAutoEQInfo(t = cur()){
   const el = $('#autoEqInfo'); if(!el) return;
+  if(S.mode === 'radio') return void (el.textContent = 'Интернет-радио идёт вне аудиографа: EQ и AI-профиль не применяются.');
   if(!S.eq.auto) el.textContent = 'Подбирает мягкую кривую по локальному анализу жанра, голоса и энергии.';
   else if(!t) el.textContent = 'Включено. Ждёт первый трек.';
   else if(!t.ai || t.ai.version !== AI_VERSION) el.textContent = 'Для этого трека ещё нет AI-анализа — временно используется FLAT.';
@@ -2520,10 +2653,11 @@ function eqUI(){
     S.eq.auto = false; S.eq.gains = PRESETS[n].g.slice(); S.eq.preset = n; S.eq.on = true;
     applyEQ(); eqUI(); saveKV(); toast('ИМПЛАНТ УСТАНОВЛЕН: ' + n);
   });
-  const peak = S.eq.on ? Math.max(0, ...S.eq.gains) : 0;
-  const headroom = peak ? Math.min(15, peak + 1.5) : 0;
+  const metrics = eqMetrics(S.eq.on ? S.eq.gains : new Array(BANDS.length).fill(0));
+  const headroom = S.eq.on && metrics.peak > .05 ? Math.min(15, metrics.peak + .8) : 0;
+  A.eqPeak = metrics.peak; A.eqHeadroom = headroom;
   $('#eqHeadroom').textContent = headroom ? `ЗАПАС −${headroom.toFixed(1)} дБ` : 'ЗАПАС 0.0 дБ';
-  drawEQCurve();
+  drawEQCurve(metrics);
 }
 $('#netSw').onclick = () => {
   S.net = !S.net;
@@ -2649,157 +2783,6 @@ $('#wipeBtn').onclick = async () => {
   location.reload();
 };
 
-/* ─── ВИЗУАЛИЗАЦИЯ ────────────────────────────────────── */
-const cv = $('#viz'), cx = cv.getContext('2d');
-let _cw = 0, _ch = 0;
-function sizeCv(){
-  const d = Math.min(devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.round(cv.clientWidth * d));
-  const h = Math.max(1, Math.round(cv.clientHeight * d));
-  if(w === _cw && h === _ch) return;
-  _cw = cv.width = w; _ch = cv.height = h;
-}
-addEventListener('resize', sizeCv);
-const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-
-/* ─── ЖИВОЕ ДВИЖЕНИЕ ──────────────────────────────────────
-   Ничего декоративного: угол пластинки идёт от состояния деки,
-   пульс — от реального сигнала с анализатора.                */
-const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const root = document.documentElement;
-const miniRing = $('#miniRing');
-let rot = 0, rotV = 0;
-const V = {bands:new Float32Array(96), raw:new Float32Array(96), peak:.18,
-  energy:0, bass:0, prevBass:0, beat:0, spin:0};
-
-function sampleVisual(live){
-  if(!A.an || !A.data) return;
-  A.an.getByteFrequencyData(A.data);
-  const audible = live && S.mode !== 'radio';
-  const bins = A.data.length, nyquist = A.ctx.sampleRate/2;
-  let peak = 0;
-  for(let i = 0; i < V.raw.length; i++){
-    const f1 = 38 * Math.pow(18000/38, i/V.raw.length);
-    const f2 = 38 * Math.pow(18000/38, (i+1)/V.raw.length);
-    const lo = Math.max(1, Math.min(bins-1, Math.floor(f1/nyquist*bins)));
-    const hi = Math.max(lo+1, Math.min(bins, Math.ceil(f2/nyquist*bins)));
-    let sum = 0;
-    for(let b = lo; b < hi; b++){ const n = A.data[b]/255; sum += n*n; }
-    const raw = audible ? Math.sqrt(sum/Math.max(1,hi-lo)) : 0;
-    V.raw[i] = raw; peak = Math.max(peak, raw);
-  }
-  V.peak = peak > V.peak ? V.peak + (peak-V.peak)*.24 : Math.max(.14, V.peak*.993);
-  let energy = 0, bass = 0;
-  for(let i = 0; i < V.bands.length; i++){
-    const norm = Math.pow(Math.max(0, Math.min(1, (V.raw[i]-.025)/Math.max(.08,V.peak-.025))), .72);
-    const speed = norm > V.bands[i] ? .48 : .105;
-    V.bands[i] += (norm-V.bands[i])*speed;
-    energy += V.bands[i];
-    if(i < 25) bass += V.bands[i];
-  }
-  energy /= V.bands.length; bass /= 25;
-  V.energy += (energy-V.energy)*(energy > V.energy ? .24 : .07);
-  V.bass += (bass-V.bass)*(bass > V.bass ? .34 : .09);
-  const hit = V.bass - V.prevBass;
-  if(audible && hit > .075 && V.bass > .28) V.beat = 1;
-  else V.beat *= .86;
-  V.prevBass += (V.bass-V.prevBass)*.2;
-  if(audible && !RM) V.spin = (V.spin + .0012 + V.energy*.004 + V.beat*.006) % (Math.PI*2);
-}
-
-function motion(){
-  const live = !au().paused && !!au().src;
-  sampleVisual(live);
-  root.style.setProperty('--bass', V.bass.toFixed(3));
-  root.style.setProperty('--beat', V.beat.toFixed(3));
-  if(RM) return;
-
-  // пластинка: 0.3°/кадр ≈ оборот за 20 с. Инерция 0.035 — вертушка
-  // не встаёт колом на паузе, а выбегает, как настоящая.
-  const target = live ? 0.3 * S.rate : 0;
-  rotV += (target - rotV) * 0.035;
-  if(rotV > 0.0005){                     // встала — перестаём трогать DOM
-    rot = (rot + rotV) % 360;
-    miniRing.style.setProperty('--rot', rot.toFixed(2) + 'deg');
-  }
-}
-
-const COLS = 30, ROWS = 18;
-function frame(){
-  requestAnimationFrame(frame);
-  motion();
-  if(!now.classList.contains('up')) return;
-  sizeCv();
-  const W = cv.width, H = cv.height;
-  if(!W) return;
-  cx.clearRect(0,0,W,H);
-  if(!A.an) return;
-  const acc = css('--acc'), acc2 = css('--acc2'), warn = css('--warn');
-  const dead = au().paused || S.mode === 'radio';   // эфир мимо анализатора — сетка дышит
-  const tNow = performance.now() / 1000;
-
-  if(S.viz === 0){
-    const gw = W/COLS, gh = H/ROWS, px = gw*.22, py = gh*.24;
-    for(let c = 0; c < COLS; c++){
-      const lo = Math.floor(c/COLS * V.bands.length);
-      const hi = Math.max(lo+1, Math.floor((c+1)/COLS * V.bands.length));
-      let v = 0; for(let i = lo; i < hi; i++) v = Math.max(v, V.bands[i]);
-      // на паузе сетка не гаснет в ноль, а дышит медленной волной — дека спит, но жива
-      const lit = dead
-        ? 1 + Math.round((Math.sin(c * .38 - tNow * 1.5) * .5 + .5) * ROWS * .16)
-        : Math.round(v/255 * ROWS);
-      for(let r = 0; r < ROWS; r++){
-        const on = r < lit, top = r/ROWS;
-        cx.fillStyle = on ? (top > .8 ? warn : top > .5 ? acc : acc2) : acc2;
-        cx.globalAlpha = on ? .88 : .05;
-        const rad = Math.min(gw - px*2, gh - py*2) / 2;
-        cx.beginPath();
-        cx.arc(c*gw + gw/2, H - (r+1)*gh + gh/2, rad, 0, 6.2832);
-        cx.fill();
-      }
-    }
-  }
-  else if(S.viz === 1){
-    A.an.getByteTimeDomainData(A.wave);
-    cx.globalAlpha = .1; cx.strokeStyle = acc2; cx.lineWidth = 1;
-    for(let y = 0; y < H; y += H/8){ cx.beginPath(); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke(); }
-    cx.globalAlpha = 1; cx.lineWidth = Math.max(2, W/300); cx.lineCap = 'round'; cx.lineJoin = 'round';
-    cx.strokeStyle = acc; cx.shadowBlur = 0;
-    let wavePeak = 0;
-    for(let i = 0; i < A.wave.length; i++) wavePeak = Math.max(wavePeak, Math.abs(A.wave[i]-128)/128);
-    const waveGain = dead ? 0 : Math.min(3.2, .78/Math.max(.08,wavePeak));
-    cx.beginPath();
-    for(let i = 0; i < A.wave.length; i++){
-      const x = i/A.wave.length * W;
-      const sleep = Math.sin(i/A.wave.length*Math.PI*4 + tNow)*H*.012;
-      const y = H/2 + (dead ? sleep : (A.wave[i]-128)/128 * waveGain * H*.42);
-      i ? cx.lineTo(x,y) : cx.moveTo(x,y);
-    }
-    cx.stroke();
-  }
-  else{
-    const cxp = W/2, cyp = H/2, R = Math.min(W,H)*.17;
-    const N = V.bands.length, pulse = dead ? 0 : V.beat;
-    cx.globalAlpha = .12 + pulse*.18; cx.strokeStyle = acc2; cx.lineWidth = 1 + pulse*2;
-    [1,1.6+pulse*.05,2.2+pulse*.11].forEach(k => { cx.beginPath(); cx.arc(cxp,cyp,R*k,0,7); cx.stroke(); });
-    cx.globalAlpha = 1; cx.lineWidth = Math.max(3, W/220); cx.lineCap = 'round';
-    for(let i = 0; i < N; i++){
-      const v = dead ? .04 + (Math.sin(i * .22 - tNow * 1.3) * .5 + .5) * .08 : V.bands[i];
-      const ang = i/N * Math.PI*2 - Math.PI/2 + V.spin;
-      const r1 = R*(1 + pulse*.035), r2 = r1 + (.05 + v*.95) * Math.min(W,H)*.29;
-      cx.strokeStyle = v > .72 ? warn : v > .38 ? acc : acc2;
-      cx.globalAlpha = .32 + v*.68;
-      cx.beginPath();
-      cx.moveTo(cxp + Math.cos(ang)*r1, cyp + Math.sin(ang)*r1);
-      cx.lineTo(cxp + Math.cos(ang)*r2, cyp + Math.sin(ang)*r2);
-      cx.stroke();
-    }
-    cx.globalAlpha = .1 + V.energy*.18 + pulse*.12; cx.fillStyle = acc;
-    cx.beginPath(); cx.arc(cxp,cyp,R*(.92+pulse*.045),0,Math.PI*2); cx.fill();
-  }
-  cx.globalAlpha = 1;
-}
-
 /* ─── РАДИО: ЖИВОЙ ЭФИР ───────────────────────────────────
    Каталог radio-browser.info: без ключей, CORS рассчитан на браузер,
    мёртвые ссылки они отсеивают сами. Частота — не станция, а диапазон:
@@ -2812,7 +2795,7 @@ async function catchWave(st){
   if(!r.ok) throw new Error('rb ' + r.status);
   const list = await r.json();
   // Плейлисты и HLS браузерный <audio> не тянет — отсеиваем сразу
-  return list.filter(x => x.url_resolved && !/\.(m3u8|pls|m3u)(\?|$)/i.test(x.url_resolved));
+  return list.filter(x => x.url_resolved && /^https:\/\//i.test(x.url_resolved) && !/\.(m3u8|pls|m3u)(\?|$)/i.test(x.url_resolved));
 }
 
 /* белый шум через bandpass — звук прокрутки верньера */
@@ -2841,12 +2824,17 @@ function offAir(){
   S.mode = 'deck'; S.station = null; S.stList = []; S.stIdx = 0;
   const a2 = $('#a2'); a2.onerror = a2.onended = null; a2.pause(); a2.removeAttribute('src'); a2.load();
   $('#nowLbl').textContent = 'ВОСПРОИЗВЕДЕНИЕ';
+  setRadioModeUI(false);
+  const t = cur();
+  if(t){ paint(t); session(t); icon(!au().paused); }
+  else resetDeckUI();
   radioUI(); saveKV();
 }
 
 function paintRadio(x){
   const st = STATIONS.find(v => v.f === S.station);
   if(!x || !st) return;
+  setRadioModeUI(true);
   $('#ne').textContent = `📻 ${st.f} FM · ${st.n} · ${radioLive ? 'ЖИВОЙ ЭФИР' : 'ПОДКЛЮЧЕНИЕ'}`;
   $('#nt').textContent = (x.name || '').trim() || 'БЕЗ ИМЕНИ';
   $('#na').textContent = [x.country, (x.codec||'').toUpperCase(), x.bitrate ? x.bitrate + ' кбит/с' : '']
@@ -2855,7 +2843,7 @@ function paintRadio(x){
   $('#miniA').textContent = st.f + ' FM · ' + st.n;
   $('#mini').classList.remove('dead');
   const bg = $('#bg'), ma = $('#miniArt');
-  if(x.favicon){ bg.src = x.favicon; bg.classList.add('on'); ma.src = x.favicon; ma.style.visibility = 'visible'; }
+  if(x.favicon && /^https:\/\//i.test(x.favicon)){ bg.src = x.favicon; bg.classList.add('on'); ma.src = x.favicon; ma.style.visibility = 'visible'; }
   else { bg.classList.remove('on'); ma.removeAttribute('src'); ma.style.visibility = 'hidden'; }
   $('#nowFav').classList.remove('on');
   $('#lyr').textContent = ''; $('#lyrBtn').classList.remove('has'); $('#lyr').classList.remove('on');
@@ -3099,7 +3087,7 @@ async function restore(){
     Object.assign(S, {
       shuffle: !!cfg.shuffle, repeat: cfg.repeat || 'off', vol: cfg.vol ?? 1, rate: cfg.rate ?? 1,
       playlists: cfg.playlists || [], cred: cfg.cred || {xp:0,ms:0}, corp: cfg.corp || 'samurai',
-      viz: cfg.viz || 0, sort: SORTS[cfg.sort] ? cfg.sort : 'added', net: !!cfg.net
+sort: SORTS[cfg.sort] ? cfg.sort : 'added', net: !!cfg.net
     });
     if(cfg.eq) S.eq = {on:!!cfg.eq.on, auto:!!cfg.eq.auto, gains:(cfg.eq.gains||S.eq.gains).slice(0, BANDS.length), preset:cfg.eq.preset||'FLAT'};
     if(cfg.fx) S.fx = {cmp:!!cfg.fx.cmp, wide:!!cfg.fx.wide, xf:cfg.fx.xf||0};
@@ -3110,7 +3098,7 @@ async function restore(){
     if(r.native && !NATIVE) return;      // натив-запись открыли в браузере — играть нечем
     const t = Object.assign({name:'', size:0, type:'audio/*', title:'БЕЗ НАЗВАНИЯ', artist:'НЕИЗВЕСТНЫЙ',
       album:'БЕЗ АЛЬБОМА', year:'', genre:'', no:'', dur:0, lyrics:'', plays:0, skips:0,
-      fav:false, ai:null, added:Date.now(), folder:''}, r, {url:null, artURL:null});
+      fav:false, ai:null, added:Date.now(), lastPlayed:0, resumePos:0, folder:''}, r, {url:null, artURL:null});
     S.lib.push(t); S.byId.set(t.id, t);
   });
   // Поднимаем кеш обложек: 40 записей, дёшево
@@ -3130,7 +3118,6 @@ async function restore(){
   $('#widSw').classList.toggle('on', S.fx.wide);
   $('#xf').value = S.fx.xf; $('#xfV').textContent = S.fx.xf + ' с';
   $('#rt').value = S.rate; $('#rtV').textContent = S.rate.toFixed(2) + '×';
-  $('#vizBtn').textContent = 'ВИЗ · ' + (S.viz+1);
   $('#volR').value = Math.round(S.vol * 100); $('#volV').textContent = Math.round(S.vol*100) + '%';
   if(cfg && cfg.queue && cfg.queue.length){
     S.queue = cfg.queue.filter(id => S.byId.has(id));
@@ -3233,12 +3220,20 @@ addEventListener('keydown', e => {
   await restore();
   $('#dirBtn').textContent = SCAN_LABEL();
   $('#impBtn').classList.toggle('hidden', NATIVE);   // в APK выбирать файлы поштучно незачем
-  credUI(); eqUI(); sleepUI(); stats(); topUI(); permUI(); render(); aiUI(); sizeCv(); frame();
+  credUI(); eqUI(); sleepUI(); stats(); topUI(); permUI(); render(); aiUI();
   checkAnalyzer();
   await breach();
   if(!S.lib.length) toast(DB.ok ? 'ПАМЯТЬ ПУСТА // ЗАГРУЗИ ТРЕКИ' : 'ХРАНИЛИЩЕ НЕДОСТУПНО // РЕЖИМ СЕССИИ');
   else toast(`ПАМЯТЬ: ${S.lib.length} ТРЕКОВ`);
 })();
 </script>
+<script src="eq-polish.js"></script>
+<script src="audio-safety.js"></script>
+<script src="runtime-guards.js"></script>
+<script src="backup.js"></script>
+<script src="boot-ready.js"></script>
+<script src="widget-actions-v2.js"></script>
+<script src="widget-bridge-v2.js"></script>
+<script src="ui-polish-v2.js"></script>
 </body>
 </html>

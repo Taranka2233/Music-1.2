@@ -6,56 +6,166 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          node-version: 20
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
 
-      # Capacitor 6 требует JDK 17
-      - uses: actions/setup-java@v4
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Проверить исходники и собрать immutable dist
+        run: |
+          npm run check
+          test -f dist/index.html
+          test -f dist/capacitor.js
+          test -f dist/build-manifest.json
+          test -f dist/media3-bridge-v3.js
+          test ! -f dist/media3-bridge.js
+          test ! -f dist/media3-bridge-v2.js
+          cmp -s www/index.html dist/index.html
+          git diff --exit-code -- www package.json package-lock.json capacitor.config.json
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
         with:
           distribution: temurin
           java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
 
-      - uses: android-actions/setup-android@v3
+      - name: Локальная модель YAMNet
+        run: npm run model
 
-      - name: Зависимости
-        run: npm ci
-
-      # Android впрыскивает только native-bridge.js. registerPlugin живёт
-      # в пакете @capacitor/core — без него плагины не поднимутся вообще.
-      - name: Рантайм Capacitor в www/
-        run: node scripts/copy-runtime.mjs
-
-      - name: Локальная модель YAMNet (с проверкой SHA-256)
-        run: node scripts/fetch-yamnet.mjs
-
-      # android/ не в репозитории — генерируем на каждой сборке
-      - name: Создать проект Android
+      - name: Создать Android-проект
         run: npx cap add android
 
-      - name: Иконки и сплэш из assets/
+      - name: Иконки и сплэш
         run: npx @capacitor/assets generate --android
 
-      - name: Накатить натив (плагин + разрешения)
-        run: node scripts/patch-android.mjs
+      - name: Накатить натив, AI, Media3 и виджет
+        run: node scripts/patch-android-v2.mjs
 
-      - name: Синхронизировать
+      - name: Синхронизировать dist
         run: npx cap sync android
+
+      - name: Проверить натив, Media3 и виджет
+        run: |
+          test -f android/app/src/main/res/layout/n54_widget.xml
+          test -f android/app/src/main/res/layout/n54_widget_expanded.xml
+          test -f android/app/src/main/res/xml/n54_widget_info.xml
+          test -f android/app/src/main/java/net/nightcity/n54deck/HomeWidgetPlugin.java
+          test -f android/app/src/main/java/net/nightcity/n54deck/N54WidgetProvider.java
+          test -f android/app/src/main/java/net/nightcity/n54deck/OutputGuardPlugin.java
+          test -f android/app/src/main/java/net/nightcity/n54deck/N54PlaybackService.java
+          test -f android/app/src/main/java/net/nightcity/n54deck/N54Media3Plugin.java
+          test ! -f android/app/src/main/java/net/nightcity/n54deck/AudioGuardPlugin.java
+          grep -q 'N54WidgetProvider' android/app/src/main/AndroidManifest.xml
+          grep -q 'N54PlaybackService' android/app/src/main/AndroidManifest.xml
+          grep -q 'androidx.media3.session.MediaSessionService' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:exported="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'HomeWidgetPlugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
+          grep -q 'OutputGuardPlugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
+          grep -q 'N54Media3Plugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
+          ! grep -q 'AudioGuardPlugin.class' android/app/src/main/java/net/nightcity/n54deck/MainActivity.java
+          grep -q 'partiallyUpdateAppWidget' android/app/src/main/java/net/nightcity/n54deck/N54WidgetProvider.java
+          grep -q 'media3-exoplayer:1.10.1' android/app/build.gradle
+          grep -q 'media3-session:1.10.1' android/app/build.gradle
+          grep -q 'content://' android/app/src/main/java/net/nightcity/n54deck/N54Media3Plugin.java
+          grep -q 'file:///' android/app/src/main/java/net/nightcity/n54deck/N54Media3Plugin.java
 
       - name: Собрать APK
         run: |
+          set -o pipefail
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-build.log
 
-      - uses: actions/upload-artifact@v4
+      - name: Выравнять APK на 16 КБ и переподписать
+        run: |
+          set -euo pipefail
+          APK_DIR=android/app/build/outputs/apk/debug
+          APK="$APK_DIR/app-debug.apk"
+          PREALIGNED="$APK_DIR/app-debug-gradle.apk"
+          ALIGNED="$APK_DIR/app-debug-aligned.apk"
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          KEYSTORE=$(cd android && ./gradlew signingReport --no-daemon | awk '/Variant: debug/{seen=1} seen && /Store: /{sub(/^.*Store: /,""); print; exit}')
+          test -x "$ZIPALIGN"
+          test -x "$APKSIGNER"
+          test -f "$KEYSTORE"
+          mv "$APK" "$PREALIGNED"
+          "$ZIPALIGN" -f -P 16 4 "$PREALIGNED" "$ALIGNED"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$APK" "$ALIGNED"
+          rm -f "$PREALIGNED" "$ALIGNED" "$APK.idsig"
+
+      - name: Проверить APK и встроенный dist
+        id: verify
+        run: |
+          set +e
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          STATUS=0
+          : > apk-verification.log
+          unzip -t "$APK" 2>&1 | tee -a apk-verification.log
+          [ ${PIPESTATUS[0]} -eq 0 ] || STATUS=1
+          "$ZIPALIGN" -c -P 16 4 "$APK" 2>&1 | tee -a apk-verification.log
+          [ ${PIPESTATUS[0]} -eq 0 ] || STATUS=1
+          "$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1 | tee -a apk-verification.log
+          [ ${PIPESTATUS[0]} -eq 0 ] || STATUS=1
+          EMBEDDED_SHA=$(unzip -p "$APK" assets/public/index.html | sha256sum | cut -d' ' -f1)
+          DIST_SHA=$(sha256sum dist/index.html | cut -d' ' -f1)
+          SOURCE_SHA=$(sha256sum www/index.html | cut -d' ' -f1)
+          [ "$EMBEDDED_SHA" = "$DIST_SHA" ] || STATUS=1
+          [ "$DIST_SHA" = "$SOURCE_SHA" ] || STATUS=1
+          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js media3-bridge-v3.js; do
+            unzip -Z1 "$APK" | grep -q "assets/public/$FILE" || STATUS=1
+          done
+          unzip -Z1 "$APK" | grep -q 'assets/public/media3-bridge.js' && STATUS=1
+          unzip -Z1 "$APK" | grep -q 'assets/public/media3-bridge-v2.js' && STATUS=1
+          EMBEDDED_INDEX=$(mktemp)
+          unzip -p "$APK" assets/public/index.html > "$EMBEDDED_INDEX"
+          grep -q 'widget-bridge-v2.js' "$EMBEDDED_INDEX" || STATUS=1
+          grep -q 'N54_MUTATION_GUARD' "$EMBEDDED_INDEX" && STATUS=1
+          grep -q 'function frame()' "$EMBEDDED_INDEX" && STATUS=1
+          grep -q 'id="viz"' "$EMBEDDED_INDEX" && STATUS=1
+          unzip -Z1 "$APK" | grep -q 'res/xml/n54_widget_info' || STATUS=1
+          unzip -p "$APK" AndroidManifest.xml >/dev/null || STATUS=1
+          apkanalyzer manifest print "$APK" | grep -q 'N54PlaybackService' || STATUS=1
+          apkanalyzer manifest version-code "$APK" | tee apk-version-code.txt | tee -a apk-verification.log
+          apkanalyzer manifest version-name "$APK" | tee apk-version-name.txt | tee -a apk-verification.log
+          sha256sum "$APK" | tee apk-sha256.txt | tee -a apk-verification.log
+          echo "$STATUS" > apk-verification-status.txt
+          exit 0
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: n54-deck-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            gradle-build.log
+            apk-version-code.txt
+            apk-version-name.txt
+            apk-sha256.txt
+            apk-verification.log
+            apk-verification-status.txt
+            dist/build-manifest.json
+          if-no-files-found: warn
+
+      - name: Подтвердить проверки APK
+        run: test "$(cat apk-verification-status.txt)" = "0"

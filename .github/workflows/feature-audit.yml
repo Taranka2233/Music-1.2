@@ -1,0 +1,58 @@
+name: Feature Audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Выполнить аудит и собрать dist
+        run: |
+          set +e
+          npm run check > feature-audit.log 2>&1
+          echo $? > feature-audit-status.txt
+          cat feature-audit.log
+          exit 0
+
+      - name: Подтвердить неизменность исходников
+        run: |
+          set +e
+          cmp -s www/index.html dist/index.html
+          CMP_STATUS=$?
+          git diff --exit-code -- www package.json package-lock.json capacitor.config.json > source-diff.log 2>&1
+          DIFF_STATUS=$?
+          if [ "$CMP_STATUS" -eq 0 ] && [ "$DIFF_STATUS" -eq 0 ]; then echo 0 > source-diff-status.txt; else echo 1 > source-diff-status.txt; fi
+          cat source-diff.log
+          exit 0
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: n54-feature-audit-log
+          path: |
+            feature-audit.log
+            feature-audit-status.txt
+            source-diff.log
+            source-diff-status.txt
+            dist/build-manifest.json
+          if-no-files-found: error
+
+      - name: Подтвердить аудит
+        run: |
+          test "$(cat feature-audit-status.txt)" = "0"
+          test "$(cat source-diff-status.txt)" = "0"

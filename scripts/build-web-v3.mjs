@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+import{createHash}from'node:crypto';import{cpSync,existsSync,mkdirSync,readFileSync,rmSync,writeFileSync,copyFileSync}from'node:fs';import{dirname,join}from'node:path';
+const src='www',out=process.argv[2]||process.env.N54_WEB_DIR||'dist',index=join(src,'index.html'),built=join(out,'index.html'),runtime='node_modules/@capacitor/core/dist/capacitor.js';
+const hash=v=>createHash('sha256').update(v).digest('hex'),fail=m=>{throw Error(m)};
+if(!existsSync(index)||!existsSync(runtime))fail('Missing canonical source or Capacitor runtime');const before=readFileSync(index),html=before.toString('utf8');
+for(const file of ['eq-polish.js','audio-safety.js','runtime-guards.js','backup.js','boot-ready.js','widget-actions-v2.js','widget-bridge-v2.js','ui-polish-v2.js']){if(!existsSync(join(src,file))||!html.includes(`src="${file}"`))fail('Missing web module '+file)}
+if(!existsSync(join(src,'media3-bridge-v3.js')))fail('Missing Media3 bridge v3');if(!readFileSync(join(src,'boot-ready.js'),'utf8').includes("script.src='media3-bridge-v3.js'"))fail('Media3 v3 loader missing');
+for(const marker of ['id="viz"','vizBtn','S.viz','function frame()','N54_MUTATION_GUARD'])if(html.includes(marker))fail('Legacy marker '+marker);
+rmSync(out,{recursive:true,force:true});mkdirSync(dirname(built),{recursive:true});const legacy=p=>p.endsWith('/capacitor.js')||p.endsWith('\\capacitor.js')||p.endsWith('/media3-bridge.js')||p.endsWith('\\media3-bridge.js')||p.endsWith('/media3-bridge-v2.js')||p.endsWith('\\media3-bridge-v2.js');cpSync(src,out,{recursive:true,filter:p=>!legacy(p)});copyFileSync(runtime,join(out,'capacitor.js'));
+if(existsSync(join(out,'media3-bridge.js'))||existsSync(join(out,'media3-bridge-v2.js'))||!existsSync(join(out,'media3-bridge-v3.js')))fail('Media3 dist cleanup failed');if(!readFileSync(built).equals(before)||hash(readFileSync(index))!==hash(before))fail('Canonical index changed');
+const pkg=JSON.parse(readFileSync('package.json','utf8'));writeFileSync(join(out,'build-manifest.json'),JSON.stringify({app:'N54 Audio Deck',version:pkg.version,sourceIndexSha256:hash(before),mediaEnginePilot:'Media3 1.10.1',generatedAt:new Date().toISOString()},null,2)+'\n');console.log(`✓ immutable Media3-clean bundle (${hash(before).slice(0,12)})`);

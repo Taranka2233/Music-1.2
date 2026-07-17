@@ -1,0 +1,85 @@
+name: AAB Audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+
+      - name: Установить зависимости и собрать dist
+        run: |
+          npm ci
+          npm run check
+          test -f dist/media3-bridge-v3.js
+          test ! -f dist/media3-bridge.js
+          test ! -f dist/media3-bridge-v2.js
+          cmp -s www/index.html dist/index.html
+          git diff --exit-code -- www package.json package-lock.json capacitor.config.json
+
+      - name: Создать Android-проект
+        run: |
+          npm run model
+          npx cap add android
+          npx @capacitor/assets generate --android
+          node scripts/patch-android-v2.mjs
+          npx cap sync android
+
+      - name: Собрать unsigned AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Проверить AAB и встроенный dist
+        run: |
+          set -euo pipefail
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
+          test -f "$AAB"
+          unzip -t "$AAB" | tee aab-verification.log
+          EMBEDDED_SHA=$(unzip -p "$AAB" base/assets/public/index.html | sha256sum | cut -d' ' -f1)
+          DIST_SHA=$(sha256sum dist/index.html | cut -d' ' -f1)
+          SOURCE_SHA=$(sha256sum www/index.html | cut -d' ' -f1)
+          test "$EMBEDDED_SHA" = "$DIST_SHA"
+          test "$DIST_SHA" = "$SOURCE_SHA"
+          for FILE in capacitor.js build-manifest.json widget-bridge-v2.js ui-polish-v2.js boot-ready.js widget-actions-v2.js backup.js media3-bridge-v3.js; do
+            unzip -Z1 "$AAB" | grep -q "base/assets/public/$FILE"
+          done
+          ! unzip -Z1 "$AAB" | grep -q 'base/assets/public/media3-bridge.js'
+          ! unzip -Z1 "$AAB" | grep -q 'base/assets/public/media3-bridge-v2.js'
+          ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'N54_MUTATION_GUARD'
+          ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'function frame()'
+          ! unzip -p "$AAB" base/assets/public/index.html | grep -q 'id="viz"'
+          sha256sum "$AAB" | tee aab-sha256.txt
+          printf '%s\n' "$EMBEDDED_SHA" | tee aab-index-sha256.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: n54-aab-audit
+          path: |
+            aab-verification.log
+            aab-sha256.txt
+            aab-index-sha256.txt
+            dist/build-manifest.json
+          if-no-files-found: error

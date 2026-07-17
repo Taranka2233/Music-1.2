@@ -17,6 +17,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * Читает индекс MediaStore — Android уже обошёл диск за нас.
  * Обхода файловой системы здесь нет и не нужно.
@@ -34,6 +37,8 @@ import com.getcapacitor.annotation.PermissionCallback;
     }
 )
 public class MusicScannerPlugin extends Plugin {
+
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
 
     private static String stringAt(Cursor c, int index, String fallback) {
         if (index < 0 || c.isNull(index)) return fallback;
@@ -91,14 +96,20 @@ public class MusicScannerPlugin extends Plugin {
         if (getPermissionState(alias()) != PermissionState.GRANTED) {
             requestPermissionForAlias(alias(), call, "afterPermission");
         } else {
-            doScan(call);
+            worker.execute(() -> doScan(call));
         }
     }
 
     @PermissionCallback
     private void afterPermission(PluginCall call) {
-        if (getPermissionState(alias()) == PermissionState.GRANTED) doScan(call);
+        if (getPermissionState(alias()) == PermissionState.GRANTED) worker.execute(() -> doScan(call));
         else call.reject("Нет доступа к аудио", "DENIED");
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        worker.shutdownNow();
+        super.handleOnDestroy();
     }
 
     private void doScan(PluginCall call) {
@@ -141,6 +152,7 @@ public class MusicScannerPlugin extends Plugin {
         java.util.Set<String> folders = new java.util.TreeSet<>();
 
         JSArray out = new JSArray();
+        JSArray knownIds = new JSArray();
         Uri artBase = Uri.parse("content://media/external/audio/albumart");
         // Ссылку на обложку MediaStore отдаёт для любого альбома, даже если
         // картинки нет — она просто не откроется. Раньше мы отдавали её всегда,
@@ -169,9 +181,10 @@ public class MusicScannerPlugin extends Plugin {
             if (iId < 0) { call.reject("MediaStore не вернул _ID", "MISSING_ID"); return; }
 
             while (c.moveToNext()) {
+                long id = longAt(c, iId);
+                knownIds.put(String.valueOf(id));
                 if (!includeAll && iMus >= 0 && intAt(c, iMus) == 0) { skipped++; continue; }
 
-                long id  = longAt(c, iId);
                 long aid = longAt(c, iAId);
 
                 String dir = stringAt(c, iDir, null);
@@ -218,6 +231,7 @@ public class MusicScannerPlugin extends Plugin {
 
         JSObject ret = new JSObject();
         ret.put("tracks", out);
+        ret.put("knownIds", knownIds);
         ret.put("count", out.length());
         ret.put("skipped", skipped);          // рингтоны, будильники, звук затвора
         ret.put("folders", fl);
