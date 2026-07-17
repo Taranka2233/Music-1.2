@@ -1,10 +1,10 @@
 (()=>{
 'use strict';
-if(!document.querySelector('script[data-n54-media3]')){
+if(document?.querySelector&&document?.createElement&&!document.querySelector('script[data-n54-media3]')){
  const script=document.createElement('script');
  script.src='media3-bridge.js';
  script.dataset.n54Media3='1';
- document.head.append(script);
+ (document.head||document.body)?.append?.(script);
 }
 const signal=()=>{
  if(window.N54_BOOT_READY)return;
