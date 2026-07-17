@@ -53,7 +53,7 @@ npm run check
 - поведенческие тесты backup rollback и cold-start команд виджета;
 - immutable сборку `dist/`.
 
-После команды `git diff -- www package.json package-lock.json capacitor.config.json` должен быть пустым.
+После команды `git diff -- www package.json package-lock.json capacitor.config.json` должен быть пустым. Workflows `Feature Audit` и `APK` имеют только `contents: read` и не изменяют ветку.
 
 ## Локальный web-запуск
 
