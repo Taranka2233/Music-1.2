@@ -1,5 +1,6 @@
 package __PKG__;
 
+import android.app.PendingIntent;
 import android.content.Intent;
 
 import androidx.annotation.Nullable;
@@ -39,8 +40,15 @@ public final class N54PlaybackService extends MediaSessionService {
                 .setAudioAttributes(audioAttributes, true)
                 .build();
         player.setHandleAudioBecomingNoisy(true);
+        PendingIntent sessionActivity = PendingIntent.getActivity(
+                this,
+                0,
+                new Intent(this, MainActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         mediaSession = new MediaSession.Builder(this, player)
                 .setCallback(sessionCallback)
+                .setSessionActivity(sessionActivity)
                 .build();
     }
 
